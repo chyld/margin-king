@@ -3,6 +3,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fontId, FontError, loadFonts, MAX_FONT_FILE, readFaceInfo } from "../../src/server/fonts.ts";
@@ -387,9 +388,24 @@ describe("the routes", () => {
     assert.equal(head.status, 200);
     assert.equal(head.headers.get("content-length"), String(regular.length));
     assert.equal((await new Client(s.base).req("GET", url)).status, 401);
-    for (const bad of [url.replace(/[0-9a-f]{12}/, "000000000000"), url.replace(".woff2", ".ttf"), url.replace("liberation-sans", "mono"), "/api/fonts/x", "/api/fonts/../../users.json"]) {
+    for (const bad of [url.replace(/[0-9a-f]{12}/, "000000000000"), url.replace(".woff2", ".ttf"), url.replace("liberation-sans", "mono"), "/api/fonts/x"]) {
       assert.equal((await c.req("GET", bad)).status, 404, bad);
     }
+    // Paths sent exactly as written (fetch would resolve the dots first): only exact URLs from the
+    // list are served (DeepSeek code r1 #6).
+    const rawGet = (path: string) =>
+      new Promise<number>((resolve, reject) => {
+        const req = request(s.base + "/", { method: "GET", path, headers: { Cookie: c.cookie } }, (res) => {
+          res.resume();
+          resolve(res.statusCode!);
+        });
+        req.on("error", reject);
+        req.end();
+      });
+    for (const bad of ["/api/fonts/../../users.json", "/api/fonts/liberation-sans/..%2f..%2fusers.json", "/api/fonts/%2e%2e/%2e%2e%2fusers.json", `${url}/..`]) {
+      assert.notEqual(await rawGet(bad), 200, bad);
+    }
+    assert.equal(await rawGet(url), 200);
   });
 
   test("FONTS_DIR, or ./fonts", () => {

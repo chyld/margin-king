@@ -62,8 +62,9 @@ class Popup {
   listFocus: number | null = null;
   /** The entry the last pointer went down on: a click counts only there. */
   downItem: Element | null = null;
-  /** How many installed fonts the open list was built with (the list arrives after boot). */
-  listBuiltWith = 0;
+  /** What the open list was built from: the target's fonts and the installed ones (which arrive after
+   *  boot). When either changes (an undo, the list arriving), the list is built again. */
+  listBuiltFrom = "";
   private onMouseUp = () => {
     if (!this.mouseDown) return;
     this.mouseDown = false;
@@ -199,6 +200,11 @@ class Popup {
     if (open) (this.listItems[this.listFocus ?? this.checkedItem()]?.el ?? null)?.scrollIntoView({ block: "nearest" });
   }
 
+  private listSource(): string {
+    const st = this.state!;
+    return JSON.stringify([st.font, st.fontMixed, st.codeOnly, st.fonts, installedFonts().length]);
+  }
+
   private checkedItem(): number {
     const i = this.listItems.findIndex((it) => it.el.classList.contains("is-current"));
     return i >= 0 ? i : 0;
@@ -211,7 +217,7 @@ class Popup {
     const list = this.fontList;
     list.replaceChildren();
     this.listItems = [];
-    this.listBuiltWith = installedFonts().length;
+    this.listBuiltFrom = this.listSource();
     const current = st.fontMixed ? undefined : st.font;
     const add = (label: string, font: string | null, mono: boolean, cls: string, disabled = false) => {
       const el = document.createElement("button");
@@ -228,7 +234,13 @@ class Popup {
       if (!disabled) this.listItems.push({ el, font, mono });
     };
     add("Default", null, false, "");
-    if (st.font && !st.fontMixed && !fontById(st.font)) add(`${st.font} (not installed)`, st.font, false, "is-missing", true);
+    // Fonts the target has that the list can't offer, so the selection's fonts are all shown: one
+    // that isn't installed, or an "other" font on code alone (code shows it in the default font).
+    for (const id of st.fonts) {
+      const font = fontById(id);
+      if (!font) add(`${id} (not installed)`, id, false, "is-missing", true);
+      else if (st.codeOnly && !font.mono) add(`${font.name} (not for code)`, id, false, "is-missing", true);
+    }
     const group = (title: string, mono: boolean) => {
       const fonts = installedFonts().filter((f) => f.mono === mono);
       if (!fonts.length) return;
@@ -318,8 +330,8 @@ class Popup {
     set(row1[0], !!st.link, st.onlyCode);
     // Font: shown when fonts are installed, or the target has a font that isn't (so it can be removed).
     row1[1].el.hidden = !installedFonts().length && !st.fonts.some((f) => !fontById(f));
-    // A list opened before the installed fonts arrived gets them when they do, keeping its focus.
-    if (this.listOpen && this.listBuiltWith !== installedFonts().length) {
+    // The open list follows the note (an undo) and the installed fonts arriving, keeping its focus.
+    if (this.listOpen && this.listBuiltFrom !== this.listSource()) {
       const focused = this.listFocus === null ? undefined : this.listItems[this.listFocus]?.font;
       this.buildList();
       const i = focused === undefined ? -1 : this.listItems.findIndex((it) => it.font === focused);

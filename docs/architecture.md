@@ -1391,7 +1391,9 @@ picked code fonts show their ligatures; a word in another font with no color get
     its opening line is byte-identical. All or nothing.
   - **Selection**: the same visible text stays selected (README §3.6). Ends in code or fence lines are
     mapped through the change set (a fence edit only changes the end of the opening line).
-- **`formatState`** gains `font: string | null`, `fontMixed: boolean` and `codeOnly: boolean`.
+- **`formatState`** gains `font: string | null`, `fontMixed: boolean`, `codeOnly: boolean`,
+  `fontable: boolean` (something in the target can take a font; else the Font button is disabled)
+  and `fonts: string[]` (every font stored anywhere in the target, for the button and the list).
   `codeOnly` is true when the target has no text characters, only inline code and/or blocks. `font`
   is the stored font shared by the target's text characters, or, for a `codeOnly` target, by its
   code characters and blocks; `null` if none has one; `fontMixed` if they differ. (Picking Inter for
@@ -1427,9 +1429,12 @@ picked code fonts show their ligatures; a word in another font with no color get
     fonts, each name drawn in its own font (opening the list downloads one face per font, once; the
     browser then caches it). For a `codeOnly` target only Default and the monospace fonts are listed.
     The current font has a check mark, Default does when there's none, and nothing does when
-    `fontMixed`. If the current font isn't installed, it's listed after Default as "`<id>` (not
-    installed)", checked and disabled. The list scrolls past about 6 entries (about 4 when docked),
-    with `touch-action: pan-y` and `overscroll-behavior: contain`.
+    `fontMixed`. Every font in the target (`fonts`) that the list doesn't offer is listed after
+    Default, disabled (checked if it's the current font): "`<id>` (not installed)", or, for a
+    `codeOnly` target, "`<name>` (not for code)" (an "other" font, which code shows in the default
+    font). The open list is built again when the target's fonts change under it (an undo) or the
+    installed fonts arrive. The list scrolls past about 6 entries (about 4 when docked), with
+    `touch-action: pan-y` and `overscroll-behavior: contain`.
   - Picking an entry applies the operation and closes the list; the popup stays, with the same text
     selected (README §3.6). A refusal shows the hint, as for any option.
   - Entries are **not** popup cells: they live in their own container, outside the `pointerdown`
@@ -1487,8 +1492,6 @@ picked code fonts show their ligatures; a word in another font with no color get
   - When the list arrives or a font loads, the editor sets its selection again (outside a
     composition), which redraws the caret and selection; only a selection that moves drops the
     popup's focus ring or closes the list.
-  - A list opened before the installed fonts arrive (possible when the target's font isn't
-    installed) is rebuilt when they do, keeping its focus.
   - Removing a block's font word that comes first in the info string takes the space after it, so
     `` ```font-a python `` becomes `` ```python ``: the rest of the line stays byte for byte, which the
     operation also checks.

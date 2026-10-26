@@ -67,3 +67,16 @@ review resize-r1, Sonnet #6), not a font problem.
 | 9 | `formatState` builds the target's rows twice | Already fixed (Sonnet #3) |
 | 10 | The "loaded" check is true for a family with no faces | Already fixed (Sol #6) |
 | 11 | No tests of a font on a heading, of Section keeping a font, or of typing inside a font run | Added the first two; typing inside a run was already tested (`=={lime+font-inter}wo‸rd==`) |
+
+## DeepSeek V4.1 Flash — 8 findings
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Unbounded decompression (a 164 KB WOFF2 took 256 MB) | Already fixed (Sol #1) |
+| 2 | Names from font files can forge log lines | Already fixed (Sonnet #5) |
+| 3 | `formatState` builds the rows twice | Already fixed (Sonnet #3) |
+| 4 | An open list keeps stale check marks when the note changes under it (an undo) | Fixed: the list is built again when the target's fonts change (with Muse #7's rebuild for the installed fonts arriving) |
+| 5 | A stored font the list doesn't offer shows nowhere: an "other" font on code alone, or missing fonts in a mixed selection | Fixed: every font in the target that isn't offered is listed after Default, disabled: "(not installed)" or "(not for code)" |
+| 6 | The path-traversal route test is vacuous: `fetch` resolves the dots before sending | Fixed: those paths are sent raw with `http.request`, with encoded variants |
+| 7 | No browser test of mixed selections | Added: text plus inline code, and text plus a block, with both kinds of font, the computed fonts and the kept selection |
+| 8 | `fontable` and `fonts` aren't in the docs | Fixed (§15 Fonts, `formatState`) |

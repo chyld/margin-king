@@ -253,3 +253,57 @@ test("the ring stays on its option when the Font button appears beside it (MiniM
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator(".fmt-popup .fmt-font")).toHaveClass(/is-focus/);
 });
+
+test("an open list follows a change to the note under it (DeepSeek code r1 #4)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "x =={font-liberation-sans}word== y");
+  await select(page, 26, 30);
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect(await listNames(page)).toContain("Liberation Sans ✓");
+  // The marker's font changes while the selection stays where it is.
+  await page.evaluate(() => (window as any).margin.view.dispatch({ changes: { from: 10, to: 25, insert: "liberation-mono" } }));
+  await expect.poll(() => listNames(page)).toContain("Liberation Mono ✓");
+  expect(await listNames(page)).not.toContain("Liberation Sans ✓");
+});
+
+test("fonts the list can't offer are still shown: not installed, or not for code (DeepSeek code r1 #5)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "see =={font-liberation-sans}`x`== here\n=={font-gone-one}a== =={font-gone-two}b==");
+  // Code alone, in an "other" font that code can't show.
+  await select(page, 29, 30);
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect(await listNames(page)).toEqual(["Default", "Liberation Sans (not for code) ✓", "#Monospace", "Fira Code", "Liberation Mono"]);
+  // Two missing fonts: both listed, neither checked.
+  const line2 = (await raw(page)).indexOf("=={font-gone-one}");
+  await select(page, line2, (await raw(page)).length);
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect((await listNames(page)).slice(0, 3)).toEqual(["Default", "gone-one (not installed)", "gone-two (not installed)"]);
+});
+
+test("mixed selections: text, inline code and a block each take what they can (DeepSeek code r1 #7)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "see `x` here");
+  await select(page, 0, 12);
+  await page.locator(".fmt-popup .fmt-font").click();
+  await page.locator(".fmt-font-item", { hasText: "Fira Code" }).click();
+  expect(await raw(page)).toBe("=={font-fira-code}see `x` here==");
+  expect(await family(page, ".cm-hl")).toMatch(/^"?margin-font-fira-code"?,/);
+  expect(await family(page, ".cm-code")).toMatch(/^"?margin-font-fira-code"?,/);
+
+  await setText(page, "intro\n```\ncode\n```\nend");
+  const all = async () => select(page, 0, (await raw(page)).length);
+  await all();
+  await page.locator(".fmt-popup .fmt-font").click();
+  await page.locator(".fmt-font-item", { hasText: "Liberation Sans" }).click();
+  expect(await raw(page)).toBe("=={font-liberation-sans}intro==\n```\ncode\n```\n=={font-liberation-sans}end==");
+  expect(await family(page, ".cm-hl")).toMatch(/^"?margin-font-liberation-sans"?,/);
+  expect(await family(page, ".cm-cb-body")).not.toContain("margin-font");
+  // The whole note stays selected: the next pick reaches the block too.
+  const sel = await page.evaluate(() => (window as any).margin.view.state.selection.main);
+  const text = await raw(page);
+  expect(text.slice(sel.from, sel.to)).toContain("intro==\n```\ncode\n```\n=={font-liberation-sans}end");
+  await page.locator(".fmt-popup .fmt-font").click();
+  await page.locator(".fmt-font-item", { hasText: "Liberation Mono" }).click();
+  expect(await raw(page)).toBe("=={font-liberation-mono}intro==\n```font-liberation-mono\ncode\n```\n=={font-liberation-mono}end==");
+  expect(await family(page, ".cm-cb-body")).toMatch(/^"?margin-font-liberation-mono"?,/);
+});
