@@ -1,0 +1,2 @@
+#!/bin/sh
+exec node /app/src/cli/margin-user.ts "$@"
