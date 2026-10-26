@@ -659,7 +659,6 @@ button {
 /* ---- Banner, paper, empty state ---- */
 .trash-banner {
   margin: 0 22px 10px;
-  max-width: 920px;
   align-self: center;
   width: calc(100% - 44px);
   display: flex;
@@ -685,9 +684,9 @@ button {
   display: flex;
   justify-content: center;
 }
+/* Full width of the main area (the owner's choice over README §4.6's 920px). */
 .paper {
   width: 100%;
-  max-width: 920px;
   height: 100%;
   border-radius: 18px;
   background: #fff;

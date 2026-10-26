@@ -1175,3 +1175,6 @@ From the reviewers' suggestions, the owner approved two on 2026-10-25:
 Declined, and so not built: ending other sessions on `margin-user passwd`, rate-limiting failed
 logins, conflict detection on save, a "delete unused screenshots" action, and a switch that turns
 off render-mode protection for long notes.
+
+Changed from the README by the owner after the build (2026-10-25): the editor paper fills the main
+area's width instead of stopping at 920px (README §4.6); the trash banner matches it.
