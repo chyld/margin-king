@@ -681,3 +681,36 @@ export function copyText(ctx: Ctx, from: number, to: number): string {
   }
   return out.join("\n");
 }
+
+/**
+ * A pasted screenshot's line at `pos` (README §3.11): on its own line, line breaks added as needed;
+ * a highlight or link there is split as Enter does; inside a code block it goes after the block.
+ */
+export function insertScreenshot(ctx: Ctx, pos: number, name: string): EditResult {
+  const md = `![](${name})`;
+  const line = lineAt(ctx.a, pos);
+  if (isLiteralLine(line)) {
+    const close = ctx.a.doc.lines[ctx.a.doc.blocks[line.block!].close];
+    return done([{ from: close.to, to: close.to, insert: `\n${md}` }], close.to + 1 + md.length);
+  }
+  if (line.kind === "image") return done([{ from: line.to, to: line.to, insert: `\n${md}` }], line.to + 1 + md.length);
+  if (atHeadingTextStart(ctx, line, pos)) return done([{ from: line.from, to: line.from, insert: `${md}\n` }], line.from + md.length + 1);
+  const expand: string[] = [];
+  const fold = folds(ctx).find((f) => pos === f.from);
+  if (fold) expand.push(fold.key);
+  const row = rowOf(ctx, line.index);
+  const segs: Seg[] = [];
+  if (line.kind === "heading" || visibleBefore(row, pos).length) segs.push({ type: "break" });
+  segs.push({ type: "raw", text: md });
+  if (visibleAfter(row, pos).length) segs.push({ type: "break" });
+  return editRange(ctx, pos, pos, segs, { expand });
+}
+
+/** The same in raw mode: plain text, line breaks added as needed. */
+export function insertScreenshotRaw(text: string, pos: number, name: string): EditResult {
+  const md = `![](${name})`;
+  const before = pos > 0 && text[pos - 1] !== "\n";
+  const after = pos < text.length && text[pos] !== "\n";
+  const insert = `${before ? "\n" : ""}${md}${after ? "\n" : ""}`;
+  return done([{ from: pos, to: pos, insert }], pos + insert.length);
+}

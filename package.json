@@ -16,7 +16,7 @@
     "test": "node --test --test-concurrency=4 \"test/unit/**/*.test.ts\" \"test/server/**/*.test.ts\"",
     "test:unit": "node --test \"test/unit/**/*.test.ts\"",
     "test:server": "node --test \"test/server/**/*.test.ts\"",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/build.ts && playwright test",
     "check": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Log in · Margin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/login.js"></script>
+</head>
+<body class="glow">
+  <main class="card-page">
+    <form class="login-form" autocomplete="on">
+      <div class="brand"><img src="/favicon.svg" alt="" width="40" height="40"><span>Margin</span></div>
+      <p class="lede">Welcome back! Log in to your notes.</p>
+      <label>Username<input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="login-error" role="alert" hidden></p>
+      <button class="btn primary" type="submit">Log in</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,10 @@
+services:
+  margin:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./data:/data
+    user: "${MARGIN_UID:-1000}:${MARGIN_GID:-1000}"
+    stop_grace_period: 30s
