@@ -105,3 +105,7 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 8 | A `?note=` link's address is replaced with `/` while it loads | Fixed: the address isn't rewritten while a note loads; on boot the note load starts first |
 | 9 | `doctor` ignores folders whose names aren't note ids | Fixed: those folders, and files named like a note id, are reported |
 | 10 | Test gaps on these paths | Added: a regression for each of the above |
+
+## MiniMax M3.1 Flash — skipped
+
+Stopped before it reported, at the owner's request.
