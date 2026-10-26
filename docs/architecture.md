@@ -1177,4 +1177,7 @@ logins, conflict detection on save, a "delete unused screenshots" action, and a 
 off render-mode protection for long notes.
 
 Changed from the README by the owner after the build (2026-10-25): the editor paper fills the main
-area's width instead of stopping at 920px (README §4.6); the trash banner matches it.
+area's width instead of stopping at 920px (README §4.6); the trash banner matches it. The
+favicon and logo icon (README §4.6) are redrawn: a dark ink rounded square with a faint margin line, a
+violet → magenta → orange highlighter bar and one white text line (`public/favicon.svg`, used by
+every page).
