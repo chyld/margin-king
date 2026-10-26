@@ -1472,13 +1472,20 @@ picked code fonts show their ligatures; a word in another font with no color get
   - A font is also italic when its style name (`name` ID 17, else 2) says *Italic* or *Oblique*:
     some fonts (KaTeX's) flag their italics as Regular.
   - The scan reads each file's metadata, keeps only that, then reads the chosen faces again and
-    checks them, so a folder of large files doesn't sit in memory twice.
+    checks they're the same faces (family, weight, style, axis and format), so a folder of large
+    files doesn't sit in memory twice. A font whose regular face can't be read then is skipped, and
+    the log says so.
   - Checked against the real Fira Code 6.2, JetBrains Mono 2.304, Source Code Pro, Inter 4.1 and
     JetBrains Mono Nerd Font downloads, unzipped straight into the folders; the server tests
     reproduce their layouts.
   - When the list arrives or a font loads, the editor sets its selection again (outside a
     composition), which redraws the caret and selection; only a selection that moves drops the
     popup's focus ring or closes the list.
+  - A list opened before the installed fonts arrive (possible when the target's font isn't
+    installed) is rebuilt when they do, keeping its focus.
+  - Removing a block's font word that comes first in the info string takes the space after it, so
+    `` ```font-a python `` becomes `` ```python ``: the rest of the line stays byte for byte, which the
+    operation also checks.
   - A list entry acts on a click only if the pointer also went down on it. Opening the list moves
     things (a docked popup grows upward), and the click of the tap that opened it would otherwise
     land on whatever entry is now under the finger.

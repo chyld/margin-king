@@ -15,3 +15,16 @@ commit per review, each with tests that fail without it.
 | 4 | With no fonts installed, the Font button hides when a missing font is mixed with plain text, so it can't be removed | Fixed: `formatState.fonts` lists every font stored in the target; the button shows if any isn't installed |
 | 5 | Mac Roman names are decoded as Latin-1 (`Café` became `Caf\u008e`, id `caf`) | Fixed: a Mac Roman table for the upper half |
 | 6 | The browser tests' "loaded" check (`document.fonts.check`) is true for a family with no faces | Fixed: `document.fonts.load` must return a loaded face |
+
+## Muse Wonder 1.0 — 8 findings
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Unbounded decompression and reads (a 93-byte Brotli stream became 50 MB) | Already fixed (Sol #1) |
+| 2 | A symlinked `monospace/` folder is followed | Already fixed (Sol #2) |
+| 3 | The second read of a chosen face checks only the family; a file replaced mid-startup could be served as another format or style | Fixed: the family, weight, style, axis and format must all match. No test: it needs a file to change between the two reads |
+| 4 | Removing a first font word leaves a space: `` ```font-a python `` → `` ``` python `` | Fixed: a first font word takes the space after it; the operation also checks the rest of the line is unchanged |
+| 5 | A font whose regular face fails the second read is skipped silently | Fixed: logged. No test, as for #3 |
+| 6 | Mac Roman names decoded as Latin-1 | Already fixed (Sol #5) |
+| 7 | A font list opened before the installed fonts arrive stays without them | Fixed: rebuilt when they arrive, keeping its focus; tested with the list request held back |
+| 8 | The ligature tests check CSS only | Fixed: a Fira Code fixture; the test draws a code line with and without ligatures and requires a difference, and none for default code |

@@ -126,7 +126,9 @@ test("phone: in the font list a tap picks a font, and a swipe scrolls it without
   await expect.poll(() => list.evaluate((l) => l.scrollTop)).toBeGreaterThan(0);
   expect(await raw(page)).toBe("x word y");
   await expect(list).toBeVisible();
-  const item = (await page.locator(".fmt-font-item", { hasText: "Liberation Serif" }).boundingBox())!;
+  const serif = page.locator(".fmt-font-item", { hasText: "Liberation Serif" });
+  await serif.scrollIntoViewIfNeeded();
+  const item = (await serif.boundingBox())!;
   await f.tap(item.x + item.width / 2, item.y + item.height / 2);
   await expect.poll(() => raw(page)).toBe("x =={font-liberation-serif}word== y");
   await expect(list).toBeHidden();

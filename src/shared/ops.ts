@@ -469,6 +469,8 @@ function applyFont(ctx: FormatCtx, from: number, to: number, op: FontOp, pinned:
     for (const id of t.blocks) {
       const open = ctx.a.doc.lines[ctx.a.doc.blocks[id].open];
       const next = withFenceFont(open.text, op.font);
+      // Only the font word changes: the rest of the line is the same (trailing spaces aside).
+      if (withFenceFont(next, null).trimEnd() !== withFenceFont(open.text, null).trimEnd()) return { ok: false, reason: "cant" };
       if (next !== open.text) fenceChanges.push(lineEdit(open, next));
     }
   }

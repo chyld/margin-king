@@ -149,10 +149,22 @@ export function fenceFont(text: string): string | null {
 }
 
 /** The opening fence with its font set (or removed, for null): every font word goes, with the
- *  whitespace before it, and the new one is added after the rest of the info string. */
+ *  whitespace before it (or, for the first word, after it), and the new one is added after the rest
+ *  of the info string, trailing spaces trimmed. The rest is kept byte for byte. */
 export function withFenceFont(text: string, font: string | null): string {
   const head = text.slice(0, 3);
-  let info = text.slice(3).replace(/(^|\s+)(\S+)/g, (all, _space: string, word: string) => (fontWord(word) ? "" : all));
+  const parts = text.slice(3).match(/\s+|\S+/g) ?? [];
+  const kept: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (!fontWord(parts[i])) {
+      kept.push(parts[i]);
+    } else if (kept.length && /^\s/.test(kept[kept.length - 1])) {
+      kept.pop();
+    } else if (/^\s/.test(parts[i + 1] ?? "")) {
+      i++;
+    }
+  }
+  let info = kept.join("");
   if (font === null) return head + info;
   info = info.replace(/\s+$/, "");
   return `${head}${info}${info ? " " : ""}font-${font}`;

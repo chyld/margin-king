@@ -221,7 +221,9 @@ test("fonts: a code block's font is a word on its opening fence", () => {
   // Setting replaces every font word; Default removes them; the rest of the line is kept.
   assert.equal(withFenceFont("```", "fira-code"), "```font-fira-code");
   assert.equal(withFenceFont("```python  ", "fira-code"), "```python font-fira-code");
-  assert.equal(withFenceFont("```font-a python font-b", "c"), "``` python font-c");
+  assert.equal(withFenceFont("```font-a python font-b", "c"), "```python font-c");
+  assert.equal(withFenceFont("```font-a python", null), "```python");
+  assert.equal(withFenceFont("```python  font-a  x", null), "```python  x");
   assert.equal(withFenceFont("```python font-a", null), "```python");
   assert.equal(withFenceFont("```font-a", null), "```");
   assert.equal(withFenceFont("```font-Inter", null), "```font-Inter");

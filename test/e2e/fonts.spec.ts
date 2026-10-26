@@ -1,5 +1,5 @@
-// Fonts (architecture §15, Fonts), with the fixture fonts in test/fixtures/fonts: Liberation Mono
-// (monospace), and Liberation Sans and Liberation Serif (other).
+// Fonts (architecture §15, Fonts), with the fixture fonts in test/fixtures/fonts: Fira Code and
+// Liberation Mono (monospace), and Liberation Sans and Liberation Serif (other).
 
 import { expect, test, type Page } from "@playwright/test";
 import { login, newNoteWith, raw, select, setText } from "./helpers.ts";
@@ -17,10 +17,10 @@ test("the Font list replaces the swatches; picking a font applies it and closes 
   await page.locator(".fmt-popup .fmt-font").click();
   await expect(page.locator(".fmt-font-list")).toBeVisible();
   await expect(page.locator(".fmt-swatches").first()).toBeHidden();
-  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
+  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Fira Code", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
   // Each name in its own font: opening the list loads them (WOFF2, TTF and WOFF here).
   expect(await family(page, ".fmt-font-item.ff-liberation-sans")).toContain("margin-font-liberation-sans");
-  for (const id of ["liberation-mono", "liberation-sans", "liberation-serif"]) await expect.poll(() => loaded(page, id)).toBe(true);
+  for (const id of ["fira-code", "liberation-mono", "liberation-sans", "liberation-serif"]) await expect.poll(() => loaded(page, id)).toBe(true);
   await page.locator(".fmt-font-item", { hasText: "Liberation Sans" }).click();
   expect(await raw(page)).toBe("x =={font-liberation-sans}word== y");
   await expect(page.locator(".fmt-font-list")).toBeHidden();
@@ -31,7 +31,7 @@ test("the Font list replaces the swatches; picking a font applies it and closes 
   await expect.poll(() => loaded(page, "liberation-sans")).toBe(true);
   // Checked now; Default removes it.
   await page.locator(".fmt-popup .fmt-font").click();
-  expect(await listNames(page)).toEqual(["Default", "#Monospace", "Liberation Mono", "#Other", "Liberation Sans ✓", "Liberation Serif"]);
+  expect(await listNames(page)).toEqual(["Default", "#Monospace", "Fira Code", "Liberation Mono", "#Other", "Liberation Sans ✓", "Liberation Serif"]);
   await page.locator(".fmt-font-item", { hasText: "Default" }).click();
   expect(await raw(page)).toBe("x word y");
 });
@@ -54,7 +54,7 @@ test("inline code shows only monospace fonts, with their ligatures", async ({ pa
   await setText(page, "see `x` here");
   await select(page, 5, 6);
   await page.locator(".fmt-popup .fmt-font").click();
-  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Liberation Mono"]);
+  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Fira Code", "Liberation Mono"]);
 });
 
 test("a code block takes a monospace font on its opening fence", async ({ page }) => {
@@ -62,7 +62,7 @@ test("a code block takes a monospace font on its opening fence", async ({ page }
   await newNoteWith(page, "intro\n```\nif (a != b) go();\n```\nend");
   await select(page, 10, 14);
   await page.locator(".fmt-popup .fmt-font").click();
-  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Liberation Mono"]);
+  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Fira Code", "Liberation Mono"]);
   await page.locator(".fmt-font-item", { hasText: "Liberation Mono" }).click();
   expect(await raw(page)).toBe("intro\n```font-liberation-mono\nif (a != b) go();\n```\nend");
   const body = ".cm-cb-body";
@@ -82,7 +82,7 @@ test("a font that isn't installed shows the default; the list offers to remove i
   expect(await family(page, ".cm-hl")).not.toContain("margin-font");
   await select(page, 17, 21);
   await page.locator(".fmt-popup .fmt-font").click();
-  expect(await listNames(page)).toEqual(["Default", "gone (not installed) ✓", "#Monospace", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
+  expect(await listNames(page)).toEqual(["Default", "gone (not installed) ✓", "#Monospace", "Fira Code", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
   await expect(page.locator(".fmt-font-item.is-missing")).toBeDisabled();
   await page.locator(".fmt-font-item", { hasText: "Default" }).click();
   expect(await raw(page)).toBe("a =={b}word== b");
@@ -122,7 +122,8 @@ test("keyboard: Enter on Font opens the list on the checked entry; arrows and En
   await expect(page.locator(".fmt-popup")).toBeVisible();
   await expect(page.locator(".fmt-popup .fmt-font")).toHaveClass(/is-focus/);
   await page.keyboard.press("Enter");
-  await page.keyboard.press("ArrowDown"); // Liberation Mono (headings are skipped)
+  await page.keyboard.press("ArrowDown"); // Fira Code (headings are skipped)
+  await page.keyboard.press("ArrowDown"); // Liberation Mono
   await page.keyboard.press("ArrowDown"); // Liberation Sans
   await page.keyboard.press("Enter");
   expect(await raw(page)).toBe("x =={font-liberation-sans}word== y");
@@ -155,4 +156,40 @@ test("the caret follows the text when a font finishes loading after the note is 
   // The text got narrower, and the drawn caret moved with it.
   await expect.poll(() => page.evaluate((pos) => (window as any).margin.view.coordsAtPos(pos).left, end)).not.toBe(before);
   await expect.poll(gap).toBeLessThan(2);
+});
+
+test("a picked monospace font's ligatures are drawn in code; the default code font has none (Muse code r1 #8)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "```font-fira-code\na != b -> c\n```\n```\na != b -> c\n```\nend");
+  await expect.poll(() => loaded(page, "fira-code")).toBe(true);
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  // Each line drawn as is, then with ligatures turned off: only Fira Code's line changes.
+  const changes = async (line: number) => {
+    const el = page.locator(".cm-cb-body").nth(line);
+    const on = await el.screenshot();
+    await el.evaluate((e) => {
+      e.style.fontVariantLigatures = "none";
+      e.style.fontFeatureSettings = '"liga" 0, "calt" 0';
+    });
+    return !on.equals(await el.screenshot());
+  };
+  expect(await changes(0)).toBe(true);
+  expect(await changes(1)).toBe(false);
+});
+
+test("a list opened before the font list arrives fills in when it does (Muse code r1 #7)", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route("**/api/fonts", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await login(page);
+  // A font that isn't installed keeps the Font button there before the list arrives.
+  await newNoteWith(page, "a =={font-gone}word== b");
+  await select(page, 15, 19);
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect(await listNames(page)).toEqual(["Default", "gone (not installed) ✓"]);
+  release();
+  await expect.poll(() => listNames(page)).toEqual(["Default", "gone (not installed) ✓", "#Monospace", "Fira Code", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
 });

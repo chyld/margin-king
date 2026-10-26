@@ -61,6 +61,8 @@ class Popup {
   listFocus: number | null = null;
   /** The entry the last pointer went down on: a click counts only there. */
   downItem: Element | null = null;
+  /** How many installed fonts the open list was built with (the list arrives after boot). */
+  listBuiltWith = 0;
   private onMouseUp = () => {
     if (!this.mouseDown) return;
     this.mouseDown = false;
@@ -210,6 +212,7 @@ class Popup {
     const list = this.fontList;
     list.replaceChildren();
     this.listItems = [];
+    this.listBuiltWith = installedFonts().length;
     const current = st.fontMixed ? undefined : st.font;
     const add = (label: string, font: string | null, mono: boolean, cls: string, disabled = false) => {
       const el = document.createElement("button");
@@ -316,6 +319,13 @@ class Popup {
     set(row1[0], !!st.link, st.onlyCode);
     // Font: shown when fonts are installed, or the target has a font that isn't (so it can be removed).
     row1[1].el.hidden = !installedFonts().length && !st.fonts.some((f) => !fontById(f));
+    // A list opened before the installed fonts arrived gets them when they do, keeping its focus.
+    if (this.listOpen && this.listBuiltWith !== installedFonts().length) {
+      const focused = this.listFocus === null ? undefined : this.listItems[this.listFocus]?.font;
+      this.buildList();
+      const i = focused === undefined ? -1 : this.listItems.findIndex((it) => it.font === focused);
+      this.listFocus = i >= 0 ? i : null;
+    }
     set(row1[1], !!st.font && !st.fontMixed, !st.fontable);
     set(row1[2], false, st.onlyCode);
     [...light, ...deep].forEach((c, i) => {

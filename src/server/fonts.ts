@@ -488,7 +488,10 @@ export async function loadFonts(dir: string | undefined, log: Log = (m) => conso
       for (const { cand, weight } of chooseFaces(families.get(name)!)) {
         try {
           const bytes = await readFont(cand.path);
-          if (readFaceInfo(bytes).family !== name) throw new FontError("it changed while being read");
+          // The face served must be the one chosen: same family, weight, style, axis and format.
+          const again = readFaceInfo(bytes);
+          const same = (i: FaceInfo) => JSON.stringify([i.family, i.weight, i.italic, i.range, i.format]);
+          if (same(again) !== same(cand.info)) throw new FontError("it changed while being read");
           const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 12);
           const f = FORMATS[cand.info.format];
           faces.push({ weight, format: cand.info.format, url: `/api/fonts/${id}/${hash}.${f.ext}`, file: cand.rel, bytes, type: f.type });
@@ -497,7 +500,10 @@ export async function loadFonts(dir: string | undefined, log: Log = (m) => conso
           log(`fonts: ${kind.dir}/${cand.rel}: ${why}; skipped`);
         }
       }
-      if (!faces.some((f) => f.weight !== "700")) continue;
+      if (!faces.some((f) => f.weight !== "700")) {
+        log(`fonts: "${name}" (${kind.dir}/) has no regular face that could be read; skipped`);
+        continue;
+      }
       used.add(id);
       fonts.push({ id, name, mono: kind.mono, faces });
       const pitch = kind.mono && families.get(name)!.some((c) => c.info.fixedPitch === false) ? " (its file says it isn't fixed-pitch)" : "";
