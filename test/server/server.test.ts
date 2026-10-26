@@ -309,10 +309,12 @@ describe("CLI", () => {
     await mkdir(dir, { recursive: true });
     const now = new Date().toISOString();
     await writeFile(join(dir, "meta.json"), JSON.stringify({ created: now, modified: now, tags: [], trashedAt: null }));
-    await writeFile(join(dir, "note.md"), "x\n![](abcdefgh.png)");
+    await writeFile(join(dir, "note.md"), "x\n![](abcdefgh.png)\n![60%](ijklmnop.png)");
     const r = await cli(s.dataDir, ["doctor"]);
     assert.equal(r.code, 1);
     assert.match(r.stdout, /screenshot abcdefgh\.png is missing/);
+    // A resized screenshot is still a screenshot (MiniMax resize #7).
+    assert.match(r.stdout, /screenshot ijklmnop\.png is missing \(line 3\)/);
     await rm(dir, { recursive: true });
   });
 

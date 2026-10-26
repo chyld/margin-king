@@ -53,3 +53,15 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 | 4 | The tap-to-show listener outlives a removed widget | Fixed: kept per widget and removed in `destroy` |
 | 5 | Docs out of date | Fixed: §15 and the README (double tap, the under-10% rule, the handle's position, the thresholds); `imageWidth` added to the line shape in §6 |
 | 6 | Missing tests | Added: a tall screenshot on desktop and phone, a finger drag out and back after a tap, the jiggle at 4px, save and reopen |
+
+## MiniMax M3.1 Flash — ship (7 findings, reviewed at `7e44f65`)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | §15 and the README don't describe the round-1 rules | Already fixed (DeepSeek #5) |
+| 2 | Below 10% the label freezes at the starting share, so a drag looks dead | Fixed: the label follows the pointer's share even while the image can't |
+| 3 | The width comes from the last `pointermove`, not where the pointer is released | Fixed: `pointerup` updates the width from its own position before writing |
+| 4 | The tap-to-show listener outlives a removed widget | Already fixed (DeepSeek #4) |
+| 5 | `imageLine` can write a width the parser rejects | Fixed: it rounds and keeps the width to 10–100, so its output always reads back as a screenshot; unit-tested |
+| 6 | Dropping the content's `min-height` during a drag collapses its box | Not adopted: only while a drag holds the pointer (pointer capture), restored on release; a note shorter than the window can't scroll, and a taller one's height doesn't depend on the min-height |
+| 7 | No test reaches the saved file, `doctor` or copy of a sized line | Save and reopen was added (DeepSeek #6); added a `doctor` case and a copy case with a sized screenshot |

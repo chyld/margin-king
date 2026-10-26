@@ -276,3 +276,17 @@ test("a resized screenshot keeps its width after saving and reopening (DeepSeek 
   expect(Math.abs((await shotWidth(page)) - (column * pct) / 100)).toBeLessThan(1);
   expect(sized).toContain(name);
 });
+
+test("below 10% the label still follows the pointer (MiniMax resize #2)", async ({ page }) => {
+  await newNoteWithShot(page, "", [40, 20]);
+  const column = await columnWidth(page);
+  const { x, y } = await grab(page);
+  const label = page.locator(".cm-shot-size");
+  await page.mouse.move(x - 20, y, { steps: 3 });
+  await expect(label).toHaveText(`${Math.max(1, Math.round((20 / column) * 100))}%`);
+  await page.mouse.move(x + 20, y, { steps: 3 });
+  await expect(label).toHaveText(`${Math.round((60 / column) * 100)}%`);
+  expect(await shotWidth(page)).toBeCloseTo(40, 0);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});

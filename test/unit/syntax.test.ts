@@ -185,3 +185,11 @@ test("screenshot lines may carry a width of 10–100% (owner decision)", async (
   assert.equal(noteTitle("![45%](a7p2xq9d.png)\nNext"), noteTitle("![](a7p2xq9d.png)\nNext"));
   assert.equal(visibleText("![45%](a7p2xq9d.png)"), visibleText("![](a7p2xq9d.png)"));
 });
+
+test("imageLine always writes a line the parser reads back (MiniMax resize #5)", async () => {
+  const { imageLine, matchImage } = await import("../../src/shared/syntax.ts");
+  for (const [w, out] of [[5, 10], [10, 10], [45.6, 46], [100, 100], [101, 100]] as const) {
+    assert.equal(imageLine("a7p2xq9d.png", w), `![${out}%](a7p2xq9d.png)`);
+    assert.deepEqual(matchImage(imageLine("a7p2xq9d.png", w)), { name: "a7p2xq9d.png", width: out });
+  }
+});

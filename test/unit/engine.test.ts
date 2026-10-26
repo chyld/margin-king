@@ -215,6 +215,9 @@ test("copy writes balanced syntax for partial lines", () => {
   assert.equal(cp("=={green}wrist «exercises==\nhello»"), "=={green}exercises==\nhello");
   assert.equal(cp("```\nfo«o b»ar\n```"), "o b");
   assert.equal(cp("«## {red} Head»"), "## {red} Head");
+  // A resized screenshot is copied with its width (MiniMax resize #7).
+  assert.equal(cp("a\n«![60%](a7p2xq9d.png)»\nb"), "![60%](a7p2xq9d.png)");
+  assert.equal(cp("«a\n![60%](a7p2xq9d.png)\nb»"), "a\n![60%](a7p2xq9d.png)\nb");
 });
 
 test("a bare URL that would swallow a following highlight becomes an explicit link (code review r1)", () => {

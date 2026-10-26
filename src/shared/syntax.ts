@@ -132,9 +132,12 @@ export function matchImage(text: string): { name: string; width: number | null }
   return m ? { name: m[2], width: m[1] ? Number(m[1]) : null } : null;
 }
 
-/** A screenshot line; `width` null is the natural size. */
+/** A screenshot line; `width` null is the natural size. Always one the parser reads back: the width
+ *  is rounded and kept to 10–100. */
 export function imageLine(name: string, width: number | null): string {
-  return `![${width === null ? "" : `${width}%`}](${name})`;
+  if (width === null) return `![](${name})`;
+  const w = Math.min(MAX_IMAGE_WIDTH, Math.max(MIN_IMAGE_WIDTH, Math.round(width)));
+  return `![${w}%](${name})`;
 }
 
 export function parseDoc(input: string): Doc {

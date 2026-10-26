@@ -116,23 +116,29 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   running.set(wrap, () => finish(false));
   const mine = (ev: PointerEvent) => ev.pointerId === e.pointerId;
   const opts = { signal: done.signal, capture: true };
+  const follow = (ev: PointerEvent) => {
+    dx = ev.clientX - startX;
+    if (!moved && Math.abs(dx) < threshold) return;
+    moved = true;
+    const pct = Math.round(((startPx + dx) / column) * 100);
+    width = below(pct) ? null : clamp(pct);
+    applyWidth(wrap, width ?? lineWidth(wrap));
+    // Below 10% the image can't follow, but the label does, so the drag visibly counts.
+    label.textContent = `${width ?? Math.max(1, pct)}%`;
+    // The lines below move: CodeMirror's height map and drawn caret follow.
+    view.requestMeasure();
+  };
+  window.addEventListener("pointermove", (ev) => mine(ev) && follow(ev), opts);
+  // Where the pointer is released counts, even if the browser coalesced the last move away.
   window.addEventListener(
-    "pointermove",
+    "pointerup",
     (ev) => {
       if (!mine(ev)) return;
-      dx = ev.clientX - startX;
-      if (!moved && Math.abs(dx) < threshold) return;
-      moved = true;
-      const pct = Math.round(((startPx + dx) / column) * 100);
-      width = below(pct) ? null : clamp(pct);
-      applyWidth(wrap, width ?? lineWidth(wrap));
-      label.textContent = `${width ?? Math.max(1, Math.round(startPct))}%`;
-      // The lines below move: CodeMirror's height map and drawn caret follow.
-      view.requestMeasure();
+      follow(ev);
+      finish(true);
     },
     opts,
   );
-  window.addEventListener("pointerup", (ev) => mine(ev) && finish(true), opts);
   window.addEventListener("pointercancel", (ev) => mine(ev) && finish(false), opts);
   // Fired at the document when the handle is removed while it holds the capture.
   document.addEventListener("lostpointercapture", (ev) => mine(ev) && finish(false), opts);
