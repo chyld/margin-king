@@ -2,7 +2,7 @@
 // analysis and returns changes against that text plus the new selection. Every render-mode edit,
 // whatever its source, is computed here.
 
-import { analyze, foldRanges, lineAt, type Analysis, type Fold } from "../../shared/analysis.ts";
+import { analyze, foldRanges, hiddenRanges, lineAt, type Analysis, type Fold } from "../../shared/analysis.ts";
 import {
   applyChanges,
   buildRow,
@@ -289,6 +289,7 @@ function editRange(ctx: Ctx, fromIn: number, toIn: number, segs: Seg[], o: EditO
   const slice = sliceOf(ctx);
   let from = Math.max(0, Math.min(fromIn, toIn));
   let to = Math.min(ctx.text.length, Math.max(fromIn, toIn));
+  [from, to] = snapToGraphemes(ctx, from, to);
   let L1 = lineAt(a, from);
   let L2 = lineAt(a, to);
   // Endpoints inside a heading prefix move outward; an insertion moves to the text's start.
@@ -580,6 +581,32 @@ function graphemes<T extends { ch: string }>(cs: T[]): T[][] {
 
 const textOf = (g: { ch: string }[]) => g.map((c) => c.ch).join("");
 
+/** The visible grapheme that `pos` falls strictly inside, as a raw range. */
+function graphemeAround(ctx: Ctx, pos: number): [number, number] | null {
+  // Two ASCII characters never form one cluster (there's no \r in a note), so most edits stop here.
+  if (ctx.text.charCodeAt(pos - 1) < 0x80 && ctx.text.charCodeAt(pos) < 0x80) return null;
+  const line = lineAt(ctx.a, pos);
+  if (line.kind === "image" || pos <= line.from || pos >= line.to) return null;
+  const row = rowOf(ctx, line.index);
+  const cs = isRich(row) ? chars(row) : line.text.split("").map((ch, i) => ({ ch, raw: line.from + i }));
+  for (const g of graphemes(cs)) {
+    const from = g[0].raw;
+    const to = g[g.length - 1].raw + 1;
+    if (from >= pos) break;
+    if (pos < to) return [from, to];
+  }
+  return null;
+}
+
+/** §6.3: a range widens to grapheme boundaries, so a cluster is never split nor a lone surrogate
+ *  written; an insertion inside a cluster goes after it. */
+function snapToGraphemes(ctx: Ctx, from: number, to: number): [number, number] {
+  const f = graphemeAround(ctx, from);
+  if (from === to) return f ? [f[1], f[1]] : [from, to];
+  const t = graphemeAround(ctx, to);
+  return [f ? f[0] : from, t ? t[1] : to];
+}
+
 /** A word (CodeMirror's grouping) or everything to the line's edge, over visible characters. */
 export function deleteUnit(ctx: Ctx, pos: number, unit: "word" | "line", dir: "backward" | "forward"): EditResult | null {
   const line = lineAt(ctx.a, pos);
@@ -738,10 +765,13 @@ export function copyText(ctx: Ctx, from: number, to: number): string {
 
 /**
  * A pasted screenshot's line at `pos` (README §3.11): on its own line, line breaks added as needed;
- * a highlight or link there is split as Enter does; inside a code block it goes after the block.
+ * a highlight or link there is split as Enter does; inside a code block it goes after the block; a
+ * collapsed section it lands in expands (§7.9). The same in both modes: a raw-mode caret inside
+ * hidden syntax is first moved out of it.
  */
-export function insertScreenshot(ctx: Ctx, pos: number, name: string): EditResult {
+export function insertScreenshot(ctx: Ctx, at: number, name: string, mode: "render" | "raw" = "render"): EditResult {
   const md = `![](${name})`;
+  const pos = mode === "raw" ? outOfSyntax(ctx, at) : at;
   const line = lineAt(ctx.a, pos);
   if (isLiteralLine(line)) {
     const close = ctx.a.doc.lines[ctx.a.doc.blocks[line.block!].close];
@@ -749,9 +779,10 @@ export function insertScreenshot(ctx: Ctx, pos: number, name: string): EditResul
   }
   if (line.kind === "image") return done([{ from: line.to, to: line.to, insert: `\n${md}` }], line.to + 1 + md.length);
   if (atHeadingTextStart(ctx, line, pos)) return done([{ from: line.from, to: line.from, insert: `${md}\n` }], line.from + md.length + 1);
-  const expand: string[] = [];
-  const fold = folds(ctx).find((f) => pos === f.from);
-  if (fold) expand.push(fold.key);
+  // Also when an upload finishes after its section was collapsed: the position is in the hidden text.
+  const expand = folds(ctx)
+    .filter((f) => pos >= f.from && pos <= f.to)
+    .map((f) => f.key);
   const row = rowOf(ctx, line.index);
   const segs: Seg[] = [];
   if (line.kind === "heading" || visibleBefore(row, pos).length) segs.push({ type: "break" });
@@ -760,17 +791,9 @@ export function insertScreenshot(ctx: Ctx, pos: number, name: string): EditResul
   return editRange(ctx, pos, pos, segs, { expand });
 }
 
-/** The same in raw mode: plain text, line breaks added as needed; inside a code block, after it. */
-export function insertScreenshotRaw(ctx: Ctx, pos: number, name: string): EditResult {
-  const md = `![](${name})`;
-  const line = lineAt(ctx.a, pos);
-  if (isLiteralLine(line)) {
-    const close = ctx.a.doc.lines[ctx.a.doc.blocks[line.block!].close];
-    return done([{ from: close.to, to: close.to, insert: `\n${md}` }], close.to + 1 + md.length);
-  }
-  const text = ctx.text;
-  const before = pos > 0 && text[pos - 1] !== "\n";
-  const after = pos < text.length && text[pos] !== "\n";
-  const insert = `${before ? "\n" : ""}${md}${after ? "\n" : ""}`;
-  return done([{ from: pos, to: pos, insert }], pos + insert.length);
+/** A raw-mode position inside a marker or a heading prefix, moved to where render mode puts it. */
+function outOfSyntax(ctx: Ctx, pos: number): number {
+  const h = hiddenRanges(ctx.a, new Set(), new Set()).find((x) => x.from < pos && pos < x.to);
+  if (!h) return pos;
+  return h.kind === "open" ? h.from : h.to;
 }

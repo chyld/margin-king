@@ -22,7 +22,9 @@ async function boot(): Promise<void> {
     listLoaded: false,
     tags: [],
     open: null,
-    loading: !!params.get("note"),
+    // openNote marks the ?note= link as loading; set here, its cancel step would publish "not
+    // loading" first and the address would be rewritten to /.
+    loading: false,
     save: "saved",
     prefs: { mode: prefs.mode(), font: prefs.font(), sidebar: prefs.sidebar() },
     ui: { drawer: phone && !params.get("note"), formatBar: false },
@@ -75,8 +77,10 @@ async function boot(): Promise<void> {
   });
 
   const note = params.get("note");
+  // Opening first marks the note as loading (synchronously) before any update can rewrite the address.
+  const opening = note ? actions.openNote(note, { skipGuard: true }) : null;
   void actions.refresh();
-  if (note) await actions.openNote(note, { skipGuard: true });
+  await opening;
 }
 
 boot().catch((err) => {

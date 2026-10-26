@@ -4,7 +4,7 @@ import { EditorSelection, Facet, StateEffect, StateField, Transaction } from "@c
 import { EditorView } from "@codemirror/view";
 import { applyFormat } from "../../shared/ops.ts";
 import { LINK_URL_RE } from "../../shared/rules.ts";
-import { insertScreenshot, insertScreenshotRaw } from "./engine.ts";
+import { insertScreenshot } from "./engine.ts";
 import { analysisField, bypass, ctxOf, expandSections, noteFacet } from "./fields.ts";
 import { renderField } from "./render.ts";
 
@@ -59,8 +59,7 @@ async function uploadScreenshot(view: EditorView, file: File, host: PasteHost): 
   const pos = view.state.field(uploadsField, false)?.get(id);
   const now = view.state.facet(noteFacet);
   if (pos === undefined || now.id !== note.id || now.generation !== host.generation() || view.state.readOnly) return;
-  const rendered = !!view.state.field(renderField, false);
-  const r = rendered ? insertScreenshot(ctxOf(view.state), pos, name) : insertScreenshotRaw(ctxOf(view.state), pos, name);
+  const r = insertScreenshot(ctxOf(view.state), pos, name, view.state.field(renderField, false) ? "render" : "raw");
   view.dispatch({
     changes: r.changes,
     selection: EditorSelection.cursor(r.head),

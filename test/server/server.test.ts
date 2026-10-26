@@ -227,6 +227,33 @@ describe("notes", () => {
     assert.ok(!files.some((f) => f.endsWith(".upload")));
   });
 
+  test("an unreadable note folder is skipped, not a 500 for the whole list (DeepSeek r1 #4)", async () => {
+    const c = new Client(s.base);
+    await c.login("alice", "secret");
+    const good = (await c.json("POST", "/api/notes", { tags: ["keep"] })).body;
+    const fs = await import("node:fs/promises");
+    const now = new Date().toISOString();
+    const meta = JSON.stringify({ created: now, modified: now, tags: ["bad"], trashedAt: null });
+    const broken = join(s.dataDir, "notes", "alice", "bbbbbbbb");
+    await fs.mkdir(join(broken, "note.md"), { recursive: true }); // note.md is a directory: EISDIR
+    await fs.writeFile(join(broken, "meta.json"), meta);
+    const invalid = join(s.dataDir, "notes", "alice", "cccccccc");
+    await fs.mkdir(invalid);
+    await fs.writeFile(join(invalid, "note.md"), "x");
+    await fs.writeFile(join(invalid, "meta.json"), "{ not json");
+    const list = await c.json("GET", "/api/notes");
+    assert.equal(list.status, 200);
+    assert.ok(list.body.some((n: { id: string }) => n.id === good.id));
+    assert.ok(!list.body.some((n: { id: string }) => n.id === "bbbbbbbb" || n.id === "cccccccc"));
+    assert.equal((await c.json("GET", "/api/notes?q=x")).status, 200);
+    const tags = await c.json("GET", "/api/tags");
+    assert.equal(tags.status, 200);
+    assert.ok(!tags.body.some((t: { tag: string }) => t.tag === "bad"));
+    assert.equal((await c.json("GET", "/api/notes/bbbbbbbb")).status, 404);
+    await fs.rm(broken, { recursive: true });
+    await fs.rm(invalid, { recursive: true });
+  });
+
   test("an upload into a note deleted meanwhile is a 404", async () => {
     const c = new Client(s.base);
     await c.login("alice", "secret");
@@ -287,6 +314,18 @@ describe("CLI", () => {
     assert.equal(r.code, 1);
     assert.match(r.stdout, /screenshot abcdefgh\.png is missing/);
     await rm(dir, { recursive: true });
+  });
+
+  test("doctor reports note folders Margin skips for their name (DeepSeek r1 #9)", async () => {
+    const misnamed = join(s.dataDir, "notes", "bob", "NOTANID");
+    await mkdir(misnamed, { recursive: true });
+    await writeFile(join(s.dataDir, "notes", "bob", "zzzzzzzz"), "a file");
+    const r = await cli(s.dataDir, ["doctor"]);
+    assert.equal(r.code, 1);
+    assert.match(r.stdout, /NOTANID: not a note id/);
+    assert.match(r.stdout, /zzzzzzzz: a file, not a note folder/);
+    await rm(misnamed, { recursive: true });
+    await rm(join(s.dataDir, "notes", "bob", "zzzzzzzz"));
   });
 });
 

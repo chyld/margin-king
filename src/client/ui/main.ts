@@ -30,6 +30,8 @@ export function mountMain(store: Store, actions: Actions): void {
 
 /** The address bar always reflects what's shown (README §3.17), replacing history entries. */
 export function syncUrl(s: AppState): void {
+  // While a note loads, the old address stays (on boot, the ?note= link being opened).
+  if (s.loading) return;
   const target = s.open ? `/?note=${s.open.summary.id}` : s.view.tag && !s.view.trash ? `/?tag=${encodeURIComponent(s.view.tag)}` : "/";
   if (location.pathname + location.search !== target) history.replaceState(null, "", target);
 }

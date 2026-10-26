@@ -15,6 +15,7 @@ import {
   setStyle3,
   splitLinksAtStyleBoundaries,
   type Change,
+  type LinkRef,
   type Row,
   type VChar,
 } from "./model.ts";
@@ -106,6 +107,29 @@ function prepare(ctx: FormatCtx, from: number, to: number): Prepared {
   return { lines, rows, targets };
 }
 
+/**
+ * The link under the characters: one link, or adjacent links to the same address left by formatting
+ * part of one (they look and act as one, §13). Only on one line: a link never spans lines.
+ */
+function linkOf(targets: VChar[][]): LinkRef | null {
+  const lines = targets.filter((t) => t.length);
+  if (lines.length !== 1) return null;
+  const first = lines[0][0].link;
+  if (!first) return null;
+  return lines[0].every((c) => c.link?.url === first.url && c.link.form === first.form) ? first : null;
+}
+
+/** The characters of the (possibly split) link that `cs[at]` is on. */
+function linkRun(cs: VChar[], at: number): VChar[] {
+  const link = cs[at].link!;
+  const same = (c: VChar | undefined) => c?.link?.url === link.url && c.link.form === link.form;
+  let i = at;
+  let j = at;
+  while (same(cs[i - 1])) i--;
+  while (same(cs[j + 1])) j++;
+  return cs.slice(i, j + 1);
+}
+
 export function formatState(ctx: FormatCtx, from: number, to: number, pinned: boolean): FormatState {
   const target = resolveTarget(ctx, from, to, pinned);
   const line = lineAt(ctx.a, from);
@@ -129,8 +153,7 @@ export function formatState(ctx: FormatCtx, from: number, to: number, pinned: bo
   state.underline = all.every((c) => c.style.u);
   const nonLink = all.filter((c) => !c.link);
   state.code = nonLink.length > 0 && nonLink.every((c) => c.style.code);
-  const firstLink = all[0].link;
-  state.link = firstLink && all.every((c) => c.link?.id === firstLink.id) ? firstLink.url : null;
+  state.link = linkOf(targets)?.url ?? null;
   const colors = new Set<string | null>();
   lines.forEach((l, i) => {
     for (const c of targets[i]) colors.add(l.kind === "heading" ? l.color! : c.style.color);
@@ -300,16 +323,19 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
         break;
       }
       case "link": {
+        const cs = chars(row);
         if (!op.url) {
-          // Remove every link the target touches, keeping its text.
-          const ids = new Set(targets.map((c) => c.link?.id).filter((x) => x !== undefined));
-          for (const c of chars(row)) if (c.link && ids.has(c.link.id)) c.link = null;
+          // Remove every link the target touches (all of it), keeping its text.
+          const drop = new Set<VChar>();
+          for (const t of targets) if (t.link && !drop.has(t)) for (const c of linkRun(cs, cs.indexOf(t))) drop.add(c);
+          for (const c of drop) c.link = null;
           break;
         }
-        const existing = all[0].link?.form === "md" && all.every((c) => c.link?.id === all[0].link!.id) ? all[0].link : null;
-        if (existing) {
+        const existing = linkOf(p.targets);
+        if (existing?.form === "md") {
+          // The whole link gets the new address, including parts outside the selection.
           const moved = { ...existing, url: op.url };
-          for (const c of chars(row)) if (c.link?.id === existing.id) c.link = moved;
+          for (const c of linkRun(cs, cs.indexOf(targets[0]))) c.link = moved;
           break;
         }
         const link = { id: freshId(), url: op.url, form: "md" as const };

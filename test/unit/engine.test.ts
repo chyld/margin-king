@@ -7,7 +7,7 @@ import {
   deleteRange,
   deleteUnit,
   enter,
-  insertScreenshotRaw,
+  insertScreenshot,
   insertText,
   makeCtx,
   transpose,
@@ -240,8 +240,35 @@ test("word delete next to a collapsed section expands it (Kimi r1 #11)", () => {
 
 test("a screenshot pasted in raw mode inside a code block goes after it (Kimi r1 #10)", () => {
   const text = "```\ncode\n```\nafter";
-  const r = insertScreenshotRaw(ctxOf(text), 6, "a7p2xq9d.png");
+  const r = insertScreenshot(ctxOf(text), 6, "a7p2xq9d.png", "raw");
   assert.equal(show(text, r), "```\ncode\n```\n![](a7p2xq9d.png)‸\nafter");
   const plain = "ab";
-  assert.equal(show(plain, insertScreenshotRaw(ctxOf(plain), 1, "a7p2xq9d.png")), "a\n![](a7p2xq9d.png)\n‸b");
+  assert.equal(show(plain, insertScreenshot(ctxOf(plain), 1, "a7p2xq9d.png", "raw")), "a\n![](a7p2xq9d.png)\n‸b");
+});
+
+test("a raw-mode screenshot splits a highlight or link as render mode does (DeepSeek r1 #1)", () => {
+  const shot = (text: string, pos: number, collapsed: string[] = [], mode: "render" | "raw" = "raw") =>
+    show(text, insertScreenshot(ctxOf(text, collapsed), pos, "a7p2xq9d.png", mode));
+  const hl = "a =={green}wrist== b";
+  assert.equal(shot(hl, hl.indexOf("st")), "a =={green}wri==\n![](a7p2xq9d.png)\n=={green}‸st== b");
+  // Inside a marker or a link's address: next to the token, not inside its syntax.
+  assert.equal(shot(hl, 5), "a \n![](a7p2xq9d.png)\n‸=={green}wrist== b");
+  const link = "see [docs](https://a.com) now";
+  assert.equal(shot(link, link.indexOf("a.com")), "see [docs](https://a.com)\n![](a7p2xq9d.png)\n‸ now");
+  const heading = "## {red} Title";
+  assert.equal(shot(heading, 4), "![](a7p2xq9d.png)\n‸## {red} Title");
+});
+
+test("a screenshot landing in a collapsed section expands it (DeepSeek r1 #1)", () => {
+  const text = "## {red} Head\nbody\n## {blue} Next";
+  const r = insertScreenshot(ctxOf(text, ["## {red} Head"]), "## {red} Head\nbody".length, "a7p2xq9d.png");
+  assert.deepEqual(r.expand, ["## {red} Head"]);
+});
+
+test("edits widen to whole graphemes; no lone surrogate is written (DeepSeek r1 #5)", () => {
+  const t = "a👩‍💻b";
+  assert.equal(show(t, deleteRange(ctxOf(t), 2, 4)), "a‸b");
+  assert.equal(show(t, insertText(ctxOf(t), 2, 2, "x")), "a👩‍💻x‸b");
+  const rich = "=={b}a😀b==";
+  assert.equal(show(rich, deleteRange(ctxOf(rich), 7, 8)), "=={b}a‸b==");
 });

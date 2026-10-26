@@ -314,3 +314,49 @@ test("each change of a multi-change edit lands where it was aimed (Kimi r1 #7)",
   });
   expect(await raw(page)).toBe("[h](https://a.com)\n[ttps](https://a.com)\n[://a.com](https://a.com)");
 });
+
+const readOnly = (page: Page) => page.evaluate(() => (window as any).margin.view.state.readOnly);
+
+test("a note being trashed is frozen, and a view change meanwhile still closes it (DeepSeek r1 #2)", async ({ page }) => {
+  const id = await newNoteWith(page, "Trash me");
+  page.on("dialog", (d) => void d.accept());
+  const g = await gate(page, `**/api/notes/${id}/trash`, "POST");
+  await page.click(".trash-note");
+  await g.seen;
+  expect(await readOnly(page)).toBe(true);
+  await page.click(".trash-toggle");
+  expect(await readOnly(page)).toBe(true);
+  g.release();
+  await expect.poll(async () => (await store(page)).open).toBeNull();
+});
+
+test("a failed logout says so and stays logged in (DeepSeek r1 #3)", async ({ page }) => {
+  const id = await newNoteWith(page, "Still here");
+  await page.route("**/api/logout", (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Server error" }) }),
+  );
+  await page.click(".logout");
+  await expect(page.locator(".toast.is-error")).toContainText("Couldn't log out");
+  expect(await readOnly(page)).toBe(false);
+  expect(new URL(page.url()).search).toBe(`?note=${id}`);
+});
+
+test("the pinned bar says when there's no word at the cursor (DeepSeek r1 #7)", async ({ page }) => {
+  await newNoteWith(page, "a  b");
+  await select(page, 2);
+  await page.click(".palette");
+  await expect(page.locator(".fmt-hint")).toHaveText("Select some text first");
+  await select(page, 1);
+  await expect(page.locator(".fmt-hint")).toHaveText("Enter applies · Esc closes");
+});
+
+test("a ?note= link keeps its address while the note loads (DeepSeek r1 #8)", async ({ page }) => {
+  const id = await newNoteWith(page, "Linked");
+  const g = await gate(page, `**/api/notes/${id}`, "GET");
+  await page.goto(`/?note=${id}`);
+  await g.seen;
+  expect(new URL(page.url()).search).toBe(`?note=${id}`);
+  g.release();
+  await expect.poll(async () => (await store(page)).open?.summary.id).toBe(id);
+  expect(new URL(page.url()).search).toBe(`?note=${id}`);
+});

@@ -47,7 +47,14 @@ export class Actions {
   /** The open note's editability, after a cancelled or failed navigation. */
   private restoreEditable(): void {
     const open = this.store.get().open;
-    this.editor.setReadOnly(!open || !!open.summary.trashedAt);
+    this.editor.setReadOnly(!open || !!open.summary.trashedAt || this.isFrozen(open.summary.id));
+  }
+
+  /** Notes being trashed ("*" while logging out): read-only whatever else navigates meanwhile. */
+  private frozen = new Set<string>();
+
+  private isFrozen(id: string): boolean {
+    return this.frozen.has(id) || this.frozen.has("*");
   }
 
   currentGeneration(): number {
@@ -124,7 +131,7 @@ export class Actions {
   // Opening and closing
 
   private install(note: NoteResponse, generation: number): void {
-    const readOnly = !!note.trashedAt;
+    const readOnly = !!note.trashedAt || this.isFrozen(note.id);
     this.editor.open({ id: note.id, text: note.text, generation, readOnly, collapsed: prefs.collapsed(note.id) });
     const { text: _text, ...summary } = note;
     this.set(() => ({
@@ -156,7 +163,7 @@ export class Actions {
     } catch (err) {
       if (g !== this.generation) return;
       this.set(() => ({ loading: false }));
-      if (this.store.get().open) this.editor.setReadOnly(!!this.store.get().open!.summary.trashedAt);
+      if (this.store.get().open) this.restoreEditable();
       this.fail(err);
     }
   }
@@ -204,12 +211,20 @@ export class Actions {
   async logout(): Promise<void> {
     if (!(await this.canLeave())) return;
     this.nav();
+    // What was on screen when the user agreed to leave is all that may be lost.
+    const accepted = this.editor.doc();
+    this.frozen.add("*");
+    this.editor.setReadOnly(true);
     try {
       await api("POST", "/api/logout");
-    } catch {
-      // Going to the login page either way.
+    } catch (err) {
+      // Still logged in: say so and stay, rather than reload into the same session.
+      this.frozen.delete("*");
+      this.restoreEditable();
+      if (err instanceof ApiError && err.status !== 401) toast(`Couldn't log out: ${err.message}`, true);
+      return;
     }
-    window.removeEventListener("beforeunload", this.beforeUnload);
+    if (this.editor.doc().eq(accepted)) window.removeEventListener("beforeunload", this.beforeUnload);
     location.href = "/";
   }
 
@@ -314,16 +329,23 @@ export class Actions {
     const title = open.summary.title || "Untitled";
     const message = `Move "${title}" to the trash?${this.dirty() ? "\nYour unsaved changes will be lost." : ""}`;
     if (!window.confirm(message)) return;
-    await this.drainTags();
-    const g = this.nav();
     const id = open.summary.id;
+    this.nav();
+    // Nothing typed after the confirmation can be lost: the note is frozen until it's trashed.
+    this.frozen.add(id);
+    this.editor.setReadOnly(true);
     try {
+      await this.drainTags();
       await api("POST", `/api/notes/${id}/trash`);
-      // A later navigation wins: only close the note if it's still the one being shown.
-      if (g === this.generation && this.store.get().open?.summary.id === id) this.close();
+      this.frozen.delete(id);
+      // Close it if it's still the note being shown (a view change doesn't leave it open as if
+      // it weren't trashed); a note opened meanwhile stays.
+      if (this.store.get().open?.summary.id === id) this.close();
       toast("Moved to trash");
       void this.refresh();
     } catch (err) {
+      this.frozen.delete(id);
+      if (this.store.get().open?.summary.id === id) this.restoreEditable();
       this.fail(err);
     }
   }
@@ -350,11 +372,11 @@ export class Actions {
     if (!open?.summary.trashedAt) return;
     const title = open.summary.title || "Untitled";
     if (!window.confirm(`Delete "${title}" forever? This can't be undone.`)) return;
-    const g = this.nav();
+    this.nav();
     const id = open.summary.id;
     try {
       await api("DELETE", `/api/notes/${id}`);
-      if (g === this.generation && this.store.get().open?.summary.id === id) this.close();
+      if (this.store.get().open?.summary.id === id) this.close();
       void this.refresh();
     } catch (err) {
       this.fail(err);

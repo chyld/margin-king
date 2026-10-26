@@ -90,3 +90,18 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 10 | In raw mode, a screenshot pasted inside a code block lands in the block | Fixed: it goes after the block, as in render mode (architecture §7.9) |
 | 11 | Word or line delete next to a collapsed section changes hidden text | Fixed: it expands the section first, like Backspace and Delete |
 | 12 | `margin-user` error paths exit holding the lock | Already fixed (Sol #6) |
+
+## DeepSeek V4.1 Flash — fix first (10 findings, reviewed at `25cb418`)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Screenshot insertion: raw mode splits a highlight or link into literal syntax; an upload landing in a collapsed section stays hidden | Fixed: one insertion for both modes (a raw caret inside hidden syntax first moves out of it), and a section the position falls in expands (§7.9) |
+| 2 | Trash: text typed after the confirmation is lost; a view change meanwhile leaves the trashed note open and editable (same shape in Delete forever) | Fixed: the note is read-only from the confirmation until the request ends, and it's closed if it's still the one shown, whatever navigated meanwhile |
+| 3 | A failed logout reloads into the same session with no error | Fixed: a toast, and the user stays; editing is frozen during the request, and text typed meanwhile keeps the leave prompt |
+| 4 | One unreadable note folder makes the list, search, tags and page fail with 500 | Fixed: invalid or unreadable folders are skipped and logged once each (§5.6) |
+| 5 | `editRange` doesn't widen to grapheme boundaries | Fixed: every edit range snaps to whole graphemes (§6.3); an insertion inside one goes after it |
+| 6 | Selecting a link split by formatting gives a blank Link prompt (and OK removes it) | Fixed: adjacent links to the same address count as one for the prompt, a new address and removal |
+| 7 | The pinned bar never says "Select some text first" until a click | Fixed: the hint says so whenever there's no word at the cursor (README §3.6); the unused helper was removed |
+| 8 | A `?note=` link's address is replaced with `/` while it loads | Fixed: the address isn't rewritten while a note loads; on boot the note load starts first |
+| 9 | `doctor` ignores folders whose names aren't note ids | Fixed: those folders, and files named like a note id, are reported |
+| 10 | Test gaps on these paths | Added: a regression for each of the above |

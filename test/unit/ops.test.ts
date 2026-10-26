@@ -110,3 +110,14 @@ test("a bare-URL address ending in = keeps its = (Kimi r1 #8)", () => {
   assert.equal(fmt("«https://a.com»", { type: "link", url: "https://b.com/?a=" }), "[«https://b.com/?a=»](https://b.com/?a=)");
   assert.equal(fmt("=={green}«https://a.com»==", { type: "link", url: "https://b.com/?a==b" }), "=={green}[«https://b.com/?a==b»](https://b.com/?a==b)==");
 });
+
+test("a link split by formatting acts as one link (DeepSeek r1 #6)", () => {
+  const split = "[d](https://a.com)=={b}[o](https://a.com)==[cs](https://a.com)";
+  const { text, from, to } = sel("«" + split + "»");
+  assert.equal(formatState(formatCtx(text), from, to, false).link, "https://a.com");
+  assert.equal(formatState(formatCtx(text), 1, 2, false).link, "https://a.com");
+  const moved = fmt("[«d»](https://a.com)=={b}[o](https://a.com)==[cs](https://a.com)", { type: "link", url: "https://b.com" });
+  assert.equal(moved, "[«d»](https://b.com)=={b}[o](https://b.com)==[cs](https://b.com)");
+  const removed = fmt("[«d»](https://a.com)=={b}[o](https://a.com)==[cs](https://a.com)", { type: "link", url: "" });
+  assert.equal(removed, "«d»=={b}o==cs");
+});

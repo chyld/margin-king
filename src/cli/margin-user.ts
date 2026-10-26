@@ -202,8 +202,15 @@ async function doctor(): Promise<void> {
     const userDir = join(notesDir, user);
     for (const entry of (await readdir(userDir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const dir = join(userDir, entry.name);
-      if (!entry.isDirectory()) continue;
-      if (!isNoteId(entry.name)) continue;
+      // Margin only reads folders named with a note id; report anything that looks meant as a note.
+      if (!entry.isDirectory()) {
+        if (isNoteId(entry.name)) problems.push(`${dir}: a file, not a note folder (Margin skips it)`);
+        continue;
+      }
+      if (!isNoteId(entry.name)) {
+        problems.push(`${dir}: not a note id (8 characters, a-z and 0-9), so Margin skips this folder`);
+        continue;
+      }
       const fresh = (await ageMs(dir)) < FRESH_MS;
       const metaText = await readFile(join(dir, "meta.json"), "utf8").catch(() => null);
       const noteText = await readFile(join(dir, "note.md"), "utf8").catch(() => null);

@@ -3,7 +3,7 @@
 import { EditorSelection, Facet, Prec, Transaction } from "@codemirror/state";
 import { EditorView, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { HUES } from "../../shared/palette.ts";
-import { applyFormat, formatState, resolveTarget, type FormatOp, type FormatState } from "../../shared/ops.ts";
+import { applyFormat, formatState, type FormatOp, type FormatState } from "../../shared/ops.ts";
 import { normalizeUrl } from "../../shared/rules.ts";
 import { analysisField, bypass } from "./fields.ts";
 
@@ -198,8 +198,10 @@ class Popup {
     if (this.focus) this.rows[this.focus[0]][this.focus[1]].el.classList.add("is-focus");
     const compact = window.matchMedia("(max-width: 760px)").matches;
     this.dom.classList.toggle("is-compact", compact);
-    this.hint.textContent = this.message || (compact ? "" : DEFAULT_HINT);
-    this.hint.hidden = compact && !this.message;
+    // README §3.6: with no word at the cursor, the hint says so before anything is clicked.
+    const idle = st.hasTarget ? (compact ? "" : DEFAULT_HINT) : "Select some text first";
+    this.hint.textContent = this.message || idle;
+    this.hint.hidden = !this.hint.textContent;
   }
 
   /** Position through CodeMirror's measure cycle (layout can't be read during an update). */
@@ -367,9 +369,3 @@ export const popupKeymap = Prec.highest(
   keymap.of(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape"].map((key) => ({ key, run: keyFor(key) }))),
 );
 
-/** Whether there's anything for the pinned bar to apply to (for its hint). */
-export function hasTarget(view: EditorView): boolean {
-  const a = view.state.field(analysisField);
-  const s = view.state.selection.main;
-  return !!resolveTarget({ text: a.text, a }, s.from, s.to, true);
-}

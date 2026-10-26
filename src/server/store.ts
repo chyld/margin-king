@@ -37,6 +37,7 @@ export class StoreError extends Error {
 }
 
 const notFound = () => new StoreError(404, "Note not found");
+const errorCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code ?? String(err);
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -78,8 +79,13 @@ export class NoteStore {
   private notesDir: string;
   private locks = new KeyedLock();
 
-  constructor(dataDir: string) {
+  private log: (msg: string) => void;
+  /** Folders already reported: listings read every folder on every request. */
+  private skipped = new Set<string>();
+
+  constructor(dataDir: string, log: (msg: string) => void = (m) => console.error(m)) {
     this.notesDir = join(dataDir, "notes");
+    this.log = log;
   }
 
   userDir(user: string): string {
@@ -99,13 +105,29 @@ export class NoteStore {
     return this.locks.idle();
   }
 
-  private async readMeta(user: string, id: string): Promise<Meta | null> {
-    try {
-      return parseMeta(await readFile(join(this.noteDir(user, id), "meta.json"), "utf8"));
-    } catch (err) {
-      if (isNotFound(err)) return null;
-      throw err;
+  /** An invalid note folder is skipped, never an error for the whole listing (§5.6); logged once. */
+  private skip(user: string, id: string, reason: string): null {
+    const key = `${user}/${id}: ${reason}`;
+    if (!this.skipped.has(key)) {
+      this.skipped.add(key);
+      this.log(`margin: skipping notes/${key}`);
     }
+    return null;
+  }
+
+  private async readMeta(user: string, id: string): Promise<Meta | null> {
+    const dir = this.noteDir(user, id);
+    let text: string;
+    try {
+      text = await readFile(join(dir, "meta.json"), "utf8");
+    } catch (err) {
+      if (!isNotFound(err)) return this.skip(user, id, `meta.json can't be read (${errorCode(err)})`);
+      // Left by a crash after note.md was written; a note being created looks the same for a moment.
+      const st = await stat(join(dir, "note.md")).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > 60_000) this.skip(user, id, "no meta.json");
+      return null;
+    }
+    return parseMeta(text) ?? this.skip(user, id, "meta.json isn't valid");
   }
 
   /** The note, or null if the folder is missing or invalid (or vanished while being read). */
@@ -118,7 +140,7 @@ export class NoteStore {
       return { meta, text };
     } catch (err) {
       if (isNotFound(err)) return null;
-      throw err;
+      return this.skip(user, id, `note.md can't be read (${errorCode(err)})`);
     }
   }
 
