@@ -35,3 +35,10 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 |---|---|---|
 | 1 | On a phone the invisible handle can be dragged without the activating tap, and blocks scrolling | Already fixed (Sonnet #1); tested |
 | 2 | A drag whose widget is destroyed (Ctrl+E, a note replaced) leaks the capture-phase Esc listener | Already fixed (Sonnet #3, tested with Sol #2). Kimi's suggested belt-and-braces added too: the widget's `destroy` ends any drag running on it, so the cleanup doesn't depend on a browser firing `lostpointercapture`; tested with an undo that removes the screenshot mid-drag |
+
+## Grok 4.7 — fix first (2 findings, reviewed at `d7d46ee`)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | The invisible handle resizes on a phone without a tap, and a swipe from it doesn't scroll | Already fixed (Sonnet #1): a hidden handle is `pointer-events: none`; tested with a finger drag before any tap |
+| 2 | A drag that loses its widget (Ctrl+E, scrolled out, `editor.clear()`) swallows the next Esc | Already fixed (Sonnet #3, Kimi #2): `lostpointercapture` and the widget's `destroy` both end the drag; tested for a mode switch, a note switch and an undo |
