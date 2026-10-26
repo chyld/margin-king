@@ -1227,143 +1227,218 @@ save, the panel says so when the note has unsaved changes. A response for a note
 open is dropped.
 
 
-**Fonts** (owner request, 2026-10-26; spec reviewed by beta before the build). The admin puts font
-files in two folders; anyone editing a note can pick them for parts of the note. The choice is
-saved in `note.md`, like color and bold.
+**Fonts** (owner request, 2026-10-26; spec reviewed by beta before the build, see
+[`reviews/fonts-spec-r1.md`](reviews/fonts-spec-r1.md)). The admin puts font files in two folders,
+and anyone editing a note can pick them for parts of the note. The choice is saved in `note.md`,
+like color and bold. Owner decisions: fonts are stored in the note text; they're identified by the
+metadata inside each file (so any unzipped layout works); text can use any font, code only
+monospace fonts; fonts show in render mode only; the picker is in the formatting popup, with a
+Default entry, and Clear formatting removes fonts; each name in the list is drawn in its own font;
+picked code fonts show their ligatures; a word in another font with no color gets no side padding.
 
-- **Folders.** `./fonts/monospace/` and `./fonts/other/` (in the repo with a `.gitkeep` each; font
-  files there are git- and docker-ignored). `compose.yaml` mounts `./fonts:/fonts:ro`; the server
-  reads `FONTS_DIR` (default `./fonts`; `/fonts` in the image). They're read **once, at startup**:
-  fonts added later appear after `docker compose restart`. A missing folder means no fonts of that
-  kind (logged once). Every user sees the same list.
-- **What counts as a font.** In each folder, entries in name order, skipping names that start with
-  `.`; files that aren't `.woff2`, `.woff`, `.ttf` or `.otf` (any case) are ignored silently
-  (downloaded fonts come with licence and readme files).
-  - **A file** directly in the folder is one font, named after the file without its extension
-    (`other/Inter.woff2` → "Inter"), with one face: weight `100 900` if its name says it's variable
-    (it contains `variable`, any case, or `[`, as in `Inter[wght].ttf`), otherwise `400`. Bold text
-    in it is synthesized by the browser.
-  - **A folder** is one font named after the folder (`other/Inter/` → "Inter"). Its font files are
-    looked for in it and its subfolders, up to 3 levels deep (zips nest them in `static/`, `ttf/`,
-    `webfonts/`). Each file's name (without extension) is split into words at non-alphanumerics and
-    lower → upper case changes (`JetBrainsMono-SemiBold` → jet, brains, mono, semi, bold):
-    a file with the word `italic` or `oblique` is skipped (Margin has no italics); a file whose name
-    says it's variable is a variable face; otherwise `bold` alone is 700, and `regular`, `book`,
-    `normal`, `roman` or no weight word at all is 400; any other weight (`thin`, `hairline`,
-    `light`, `medium`, `black`, `heavy`, or `bold`/`light` with `semi`, `demi`, `extra` or `ultra`)
-    is skipped. If there's a variable face, the font is that one face (`100 900`); otherwise it's
-    the 400 face plus the 700 face if there is one, and a folder with no 400 face is skipped (with
-    a log line). Between candidates for the same face: `.woff2`, then `.woff`, then `.ttf`, then
-    `.otf`, then path order.
-  - **Id.** Each font gets an id from its name: Unicode NFKD with combining marks removed, lower
-    case, every run of other characters than `a-z0-9` becomes `-`, trimmed of `-`, at most 48
-    characters ("JetBrains Mono" → `jetbrains-mono`). A name with no letters or digits left is
-    skipped. If two fonts get the same id, the first one wins (`monospace/` before `other/`, then
-    name order) and the other is skipped. The id is what notes store, so renaming a font's file or
-    folder changes it (see *Missing fonts*).
-  - The startup log lists the fonts found per folder and each skipped entry with its reason.
-- **API.** `GET /api/fonts` (logged in): `{ fonts: [{ id, name, mono, faces: [{ weight, format,
-  url }] }] }`, monospace fonts first, then others, each by name (case-insensitive). A face's URL is
-  `/api/fonts/<id>/<hash>.<ext>`, `<hash>` being the first 12 hex digits of the file's SHA-256
-  (computed at startup), so a replaced file gets a new URL. `GET` (and `HEAD`) on it, logged in,
-  streams the file with `Content-Type` `font/woff2`, `font/woff`, `font/ttf` or `font/otf`,
-  `Content-Length`, and `Cache-Control: private, max-age=31536000, immutable`; anything not in the
-  startup table is 404. The URL maps to a file only through that table, never through the path.
+- **Folders.** `./fonts/monospace/` and `./fonts/other/` (in the repo with a `.gitkeep` each; the font
+  files themselves are git- and docker-ignored). `compose.yaml` mounts `./fonts:/fonts:ro` and the
+  image sets `ENV FONTS_DIR=/fonts`; outside Docker, `FONTS_DIR` defaults to `./fonts`.
+  `Config.fontsDir` is optional, and leaving it out means no fonts (the tests pass a fixture folder
+  explicitly). The folders are read **once, at startup, before listening**: fonts added later
+  appear after `docker compose restart`. Every user sees the same list.
+- **Scanning never stops the server.** Every error (an unreadable file or folder, a file that
+  vanishes, a broken font) is logged and that entry skipped. A missing folder means no fonts of
+  that kind. Only **regular files and real directories** count: symlinks are skipped (and logged),
+  so nothing outside the font folders can be read. Names starting with `.` and `__MACOSX` folders
+  are skipped at every depth (macOS zips carry `._*` files that aren't fonts). Folders are walked to
+  any depth, in code-unit name order.
+- **Font files.** `.woff2`, `.woff`, `.ttf` and `.otf` (any case), checked by their first bytes
+  (`wOF2`, `wOFF`, `0x00010000`/`true`/`OTTO`), not just the extension. `.ttc`/`.otc` collections
+  and `.zip` files get a log line each ("collections aren't supported", "unzip it first"); other
+  files (licences, readmes) are counted in one line per folder.
+- **Reading a file's metadata** (`src/server/fonts.ts`, no dependencies). For WOFF the needed tables
+  are inflated with `zlib`; for WOFF2 the table stream is decompressed with `zlib`'s Brotli (the
+  tables Margin reads are never transformed). From the tables:
+  - **family**: `name` ID 16 (typographic family) if present, else ID 1, preferring Windows
+    English (3/1/0x409, then any 3/1 or 3/10), then Mac Roman (1/0), then Unicode (0/*);
+  - **weight**: `OS/2` `usWeightClass`;
+  - **italic**: `OS/2` `fsSelection` bit 0 or bit 9, or `head.macStyle` bit 1;
+  - **weight range**: the `wght` axis of `fvar`, if there is one (a variable font);
+  - **fixed pitch**: `post.isFixedPitch`.
+- **Fonts from files.** In each of the two folders, the files are grouped by family name. Each group
+  is one font, named after its family. Italic faces are skipped (Margin has no italics). Then:
+  - if the group has a variable face, the font is that one face, declared `font-weight: <min> <max>`
+    from its own `wght` axis;
+  - otherwise the **regular** face is the one whose weight is nearest 400 (the lighter on a tie),
+    declared 400, and the **bold** face is the one nearest 700 among weights of at least 600 and
+    above the regular's (the lighter on a tie), declared 700. A font with no such face has its bold
+    synthesized by the browser. Declaring exactly 400 and 700 makes CSS matching pick the bold face
+    for the editor's bold (750) and the title (800).
+  - Between files for the same face: `.woff2`, then `.woff`, then `.ttf`, then `.otf`, then code-unit
+    path order.
+  - So Fira Code's zip (`ttf/`, `woff/`, `woff2/`, `variable_ttf/`) is one font "Fira Code" served
+    from its variable file; JetBrains Mono's `fonts/` is one font; Source Code Pro's `-It` files are
+    skipped as italic by their metadata; and Nerd Fonts' "… Nerd Font", "… Nerd Font Mono" and "…
+    Nerd Font Propo" are three fonts, as they are three designs.
+  - A font in `monospace/` whose `post` table says it isn't fixed-pitch is still listed, with a
+    warning in the log (the folder is the admin's word).
+- **Id.** Each font gets an id from its family name: Unicode NFKD with combining marks removed, lower
+  case, every run of characters other than `a-z0-9` becomes `-`, trimmed of `-`, cut to 48
+  characters, trimmed of `-` again ("JetBrains Mono" → `jetbrains-mono`). The result is checked
+  against the note grammar's id rule; an id that fails (empty, for a name with no Latin letters or
+  digits) is skipped with a log line. If two fonts get the same id, the one in `monospace/` wins, then
+  the family name first in code-unit order; the other is skipped with a log line. The id is what
+  notes store, and it comes from the font itself, so upgrading a font or renaming its folder keeps it.
+- **Startup log.** One line per font: kind, name, id, and the file and declared weight of each face;
+  then each skipped entry with its reason.
+- **Serving.** The chosen faces are **read into memory at startup** (as production static files
+  are, §5.4), so the bytes, their length and their hash always agree, whatever happens on disk later.
+  The log gives the total size.
+- **API.** `GET /api/fonts` (logged in):
+  `{ fonts: [{ id, name, mono, faces: [{ weight, format, url }] }] }`, monospace fonts first, then
+  others, each by name (case-insensitive). `weight` is a CSS `font-weight` value as a string (`"400"`,
+  `"700"`, `"100 900"`); `format` is the CSS keyword (`woff2`, `woff`, `truetype`, `opentype`). A
+  face's URL is `/api/fonts/<id>/<hash>.<ext>`, `<hash>` being the first 12 hex digits of its SHA-256,
+  so a changed file gets a new URL after a restart. `GET` and `HEAD` on it (logged in) look up the
+  exact `<id>/<hash>.<ext>` in the startup table (404 otherwise) and send the bytes with
+  `Content-Type` `font/woff2`, `font/woff`, `font/ttf` or `font/otf`, `Content-Length`, and
+  `Cache-Control: private, max-age=31536000, immutable`. The font routes opt out of §5.2's `no-store`
+  like screenshots do; that opt-out becomes a flag on the route instead of a match on its pattern.
   `font-src` falls under the CSP's `default-src 'self'`, so the CSP doesn't change.
-- **Client.** At boot the app fetches the list once (in parallel with the rest). From it, it adds one
+- **Client.** At boot the app fetches the list once, in parallel with the note. From it, it adds one
   `<style>` element: an `@font-face` per face (`font-family: "margin-font-<id>"`, the face's
-  `font-weight`, `font-display: swap`), and the classes below. Browsers only download a face when
-  text uses it, so fonts that aren't used cost nothing. If the request fails, there are no fonts
-  for that page load (the Font button is hidden) and text shows in the default fonts.
+  `font-weight`, `font-display: swap`) and the classes below. If the request fails, there are no
+  fonts for that page load, and text shows in the default fonts.
+- **Re-measuring.** A font downloads when text first uses it, and then the text's width changes.
+  CodeMirror only re-measures for fonts once, when it's created, so on `document.fonts`
+  `loadingdone` and `loadingerror`, and after the `<style>` is added, the editor calls
+  `requestMeasure()` and the popup re-positions. The caret, the selection and click positions follow
+  the new widths.
 - **Syntax: text.** A font is a highlight option `font-<id>`, next to the color, `b` and `u`:
   `=={font-inter}some text==`, `=={lime+b+font-inter}…==`. At most one `font-` option per highlight;
-  the id is `[a-z0-9]+(-[a-z0-9]+)*`, at most 48 characters. Margin writes the options color, `b`,
-  `u`, font. The parser doesn't need the font list (the server parses notes for titles, search and
-  `doctor`), so any well-formed id is valid syntax whether or not the font is installed. No color
-  starts with `font-`, so there's no ambiguity. Inline code and links inside the highlight are
-  parsed as before. In the original note-mvp app these options are invalid, so the marker shows as
-  text there (the same trade-off as a sized screenshot).
-- **Syntax: code blocks.** A block has at most one font, written as a word `font-<id>` in its
-  opening fence's info string: ```` ```font-jetbrains-mono ```` or ```` ```python font-fira-code ````.
-  README §3.5 says anything after the opening ```` ``` ```` is ignored, so this stays compatible.
-  The parser gives each block `font: string | null`: the first whitespace-separated word of the
-  opening line after its first three backticks that is exactly `font-<id>`.
-- **Model.** `Style` gains `font: string | null`. Runs are equal `(color, b, u, font)`; serialize
-  writes a run's font as above. Everything else in §6.3 holds: an untouched token is copied
-  byte-for-byte, a restyled one is written canonically, and font operations are verified like the
-  others.
-- **Monospace only for code.** Code (inline code and code blocks) only ever *shows* a monospace font:
-  - **Rendering**: an "other" font never applies to code, whatever the note says; inline code in
-    `=={font-inter}…==` shows in the default monospace font, and so does a block marked with an
-    "other" font. A monospace font applies to the code inside its highlight, and to a block.
-  - **Picking**: an "other" font applied to a selection is not given to the inline-code characters in
-    it, which keep their font; a monospace font is applied to all of them. Inside a code block only
-    monospace fonts are offered.
-- **The operation** (§6.4) is `{ type: "font", font: string | null, mono: boolean }` (`null` is
-  Default). Target as for the other options: the selection, or the word at the cursor with the bar
-  pinned and nothing selected.
-  - **Text** (text lines and heading text): sets `font` on every target character (except code
-    characters when `mono` is false), or removes it with Default. On part of a `[text](url)` link it
-    splits the link, and on part of a bare URL it's refused, as for every style change. It doesn't
-    touch a heading's section color.
-  - **Code blocks**: if the target touches a code block (as `</>`'s rule 1 decides), the operation
-    acts on every block it touches and nothing else: it removes each `font-…` word from the opening
-    line together with the whitespace before it, then, unless it's Default, appends ` font-<id>`
-    (with no space if nothing else follows the backticks). Only allowed with `mono`; otherwise
-    refused. The opening line is still an opening fence afterwards, so block pairings are unchanged
-    (the document check of §6.3 confirms it).
-  - Picking the font the whole target already has changes nothing (Default removes it; unlike the
-    swatches, a font isn't a toggle).
-  - **Clear formatting** also removes fonts (from text; it stays disabled in code blocks, where
-    Default does it).
-- **`formatState`** gains `font: string | null` (the font every target character or touched block
-  has; `null` if none has one), `fontMixed: boolean`, and `blockTarget: boolean`. Inside a code
-  block the Font button is enabled, like `</>`.
+  the id is `[a-z0-9]+(-[a-z0-9]+)*`, at most 48 characters. Margin writes the options in this order:
+  color, `b`, `u`, font. The parser doesn't need the font list (the server parses notes for titles,
+  search and `doctor`), so any well-formed id is valid syntax whether or not the font is installed.
+  No color starts with `font-`, so there's no ambiguity. In the original note-mvp app these options
+  are invalid, so the marker shows as text there (the same trade-off as a sized screenshot).
+- **Syntax: code blocks.** A block has at most one font: a word `font-<id>` in its opening line's
+  info string, which is the text after the first three backticks, split at whitespace:
+  ```` ```font-jetbrains-mono ```` or ```` ```python font-fira-code ````. README §3.5 says anything
+  after the opening ```` ``` ```` is ignored, so this stays compatible. Each block gets
+  `font: string | null`: the first word that is exactly `font-<id>` with a valid id (`font-Inter` or
+  a 60-character id isn't a font word). Unwrapping a block with `</>` removes its fences, font
+  included; wrapping writes plain fences.
+- **Model** (§6.3). `Opts` and `Style` gain `font: string | null`, and every place that handles the
+  styles handles the font too:
+  - `parseOptions`, `serializeOptions` and `sameOpts`, and `makeChar` taking a highlight's font;
+  - `styled()`: a run with only a font is styled, so it's written as `=={font-…}…==`;
+  - run equality (`sameStyle3` becomes `sameStyle`, over color, `b`, `u` and font) and `setStyle3`
+    (which takes the font);
+  - `openingMarker` rebuilding a restyled marker, and `sameVisible` in verification;
+  - `fixEquals`: an `=` that must turn plain loses its font too;
+  - the edit engine (§7.7): `templateAt` gives typed text the font of the highlight it's typed in,
+    and `PLAIN` and `settleRow` include the font;
+  - Clear formatting removes fonts.
+  So typing at the end of `=={font-inter}word==` extends it like a color (README §3.7). B, U, a
+  color, Remove color, Link and a heading recolor keep a font. An untouched token is still copied
+  byte-for-byte.
+- **Monospace only for code.** Code (inline code and code blocks) only ever *shows* a monospace font.
+  A code character's **effective font** is its stored font if that's an installed monospace font,
+  else the default monospace font, whatever the note says (inline code in `=={font-inter}…==` shows in
+  the default monospace font, as does a block marked with an "other" font).
+- **The operation** (§6.4): `{ type: "font", font: string | null, mono: boolean }`. `font: null` is
+  Default, which is allowed anywhere (`mono` doesn't matter for it). It has its own branch in
+  `applyFormat`, before the usual target resolution, like `</>`.
+  - **Target**: the selection; with the bar pinned and nothing selected, the word at the cursor on a
+    text line, or the block the cursor is in (any of its lines, fences included). The blocks it
+    touches are those with any line in the selection (as for `</>`'s rule 1). Its text is the
+    selection's visible characters on text lines and heading text.
+  - **Effect**: a font applies to everything in the target it's allowed on. Text characters get any
+    font; inline-code characters and touched blocks get it only if it's monospace. Default removes the
+    font from all of them. A block's font is set by removing each font word (and the whitespace
+    before it) from its opening line, then adding ` font-<id>` after the rest of the line's info
+    (trailing spaces trimmed), or right after the backticks if there's no info. If nothing would
+    change, nothing happens; if nothing in the target can take the font, the hint says "Can't apply
+    that here" (the list doesn't offer such fonts, below).
+  - On part of a `[text](url)` link it splits the link, and on part of a bare URL it's refused, as
+    for every style change. It doesn't touch a heading's section color.
+  - **Verification**: changed text lines as in §6.3; for blocks, the document check (line kinds and
+    block pairings unchanged), each touched block's parsed font is the one intended, and the rest of
+    its opening line is byte-identical. All or nothing.
+  - **Selection**: the same visible text stays selected (README §3.6). Ends in code or fence lines are
+    mapped through the change set (a fence edit only changes the end of the opening line).
+- **`formatState`** gains `font: string | null`, `fontMixed: boolean` and `codeOnly: boolean`.
+  `codeOnly` is true when the target has no text characters, only inline code and/or blocks. `font`
+  is the stored font shared by the target's text characters, or, for a `codeOnly` target, by its
+  code characters and blocks; `null` if none has one; `fontMixed` if they differ. (Picking Inter for
+  "see `x` here" then shows Inter checked, although `x` keeps its font.) Inside a code block the Font
+  button is enabled, like `</>`.
 - **Render** (render mode only; raw mode stays all monospace, README §3.4, and shows the markers as
-  text). A highlight with a font gets the class `ff-<id>`, and so does each inline-code mark inside
-  it and each line of a block with a font. The generated CSS, for each installed font:
+  text). A highlight with a font gets the classes `cm-hl-font` and `ff-<id>`; each inline-code mark
+  inside it and each line of a block with a font gets `ff-<id>`. These are added from the syntax
+  alone, installed or not; only installed fonts have rules. The editor's `font-mono` and `font-prop`
+  classes set `--note-font` (`var(--mono)` or `var(--ui)`). The generated CSS, per installed font:
   - every font: `.mode-render .cm-hl.ff-<id> { font-family: "margin-font-<id>", var(--note-font) }`,
-    where `--note-font` is the note's default font from the Monospace/Proportional switch
-    (`var(--mono)` or `var(--ui)`), set on the editor;
-  - monospace fonts also: `.mode-render .cm-code.ff-<id>, .mode-render .cm-cb.ff-<id> {
-    font-family: "margin-font-<id>", var(--mono) }`. For other fonts there's no such rule, so code
-    keeps `.cm-code`'s and `.cm-cb`'s `var(--mono)`.
-  - Sizes aren't adjusted: a font shows at the size of the text around it. Bold (`.cm-hl-b`, 750)
-    uses the 700 face if the font has one, a variable face's 750, or the browser's synthesized bold.
+    and `.fmt-font-list .ff-<id>` with the font and `var(--ui)` (or `var(--mono)` for a monospace
+    font) for the list;
+  - monospace fonts also: `.mode-render .cm-code.ff-<id>, .mode-render .cm-cb.ff-<id>` with the font
+    and `var(--mono)`, and **ligatures on** (`font-variant-ligatures: normal; font-feature-settings:
+    normal`; the editor turns them off everywhere else). For other fonts there's no such rule, so
+    code keeps `var(--mono)`.
+  - Static CSS: `.cm-hl-font:not(.cm-hl-color)` has no side padding, so a word in another font doesn't
+    push the text beside it apart; colored highlights and bold- or underline-only text keep README
+    §4.3's 1px × 3px.
+  - Sizes aren't adjusted: a font shows at the size of the text around it. Bold (750) uses the face
+    declared 700, a variable face's own weight, or the browser's synthesized bold.
   - README §4.3 says highlights "keep the note's font"; this is the owner's change to that.
-  - A highlight with no color gets no padding (README §4.3's 1px × 3px is for the color behind the
-    text), so a word in another font doesn't push the text beside it apart. *This also tightens
-    bold- or underline-only text by 3px a side — pending the owner's confirmation.*
-- **Missing fonts.** A font the note names that isn't installed (removed, renamed, or a note copied
-  from another server) shows in the default font; the note keeps its markers, so reinstalling the
-  font brings the look back. Nothing in the note is rewritten.
+- **Missing fonts.** A font the note names that isn't installed (removed, or a note copied from
+  another server) shows in the default font; the note keeps its markers, so installing the font
+  brings the look back. Nothing in the note is rewritten.
 - **The Font button** (§7.8, README §3.6). The second row becomes `[ 🔗 Link ][ Aa Font ][ Remove
-  color ]`. The button is hidden when no fonts are installed. Pressing it opens the **font list** in
-  place of the two swatch rows (so a docked popup doesn't grow); pressing it again, or Esc, closes
-  the list and goes back to the swatches.
+  color ]`. The button is always built, and shown when fonts are installed or the target's font isn't
+  installed (so it can be removed); the keyboard ring skips it when it's hidden. Pressing it opens the
+  **font list** in place of the two swatch rows; pressing it again, Esc, a selection change or the
+  bar closing goes back to the swatches. The popup re-positions when the list opens or closes.
   - The list: **Default** first, then a "Monospace" heading and its fonts, then "Other" and its
-    fonts, each name drawn in its own font (`.fmt-font-list .ff-<id>`, at the popup's text size).
-    In a code block (`blockTarget`) only Default and the monospace fonts are listed. The current
-    font (`font`) has a check mark, Default does when there's none, and nothing does when the target
-    is mixed. If the current font isn't installed, it's listed after Default as "`<id>` (not
-    installed)", checked and disabled. The list scrolls when it's taller than about 8 entries.
+    fonts, each name drawn in its own font (opening the list downloads one face per font, once; the
+    browser then caches it). For a `codeOnly` target only Default and the monospace fonts are listed.
+    The current font has a check mark, Default does when there's none, and nothing does when
+    `fontMixed`. If the current font isn't installed, it's listed after Default as "`<id>` (not
+    installed)", checked and disabled. The list scrolls past about 6 entries (about 4 when docked),
+    with `touch-action: pan-y` and `overscroll-behavior: contain`.
   - Picking an entry applies the operation and closes the list; the popup stays, with the same text
     selected (README §3.6). A refusal shows the hint, as for any option.
-  - Entries act on **click**, not on `pointerdown` like the other buttons, so swiping the list to
-    scroll it on a touch screen doesn't pick a font; `pointerdown` and `mousedown` are still
-    prevented, to keep the editor's focus and selection.
-  - **Keyboard**: the Font button is in the second row of the ring. Enter on it opens the list with
-    the ring on the checked entry (or the first); Up and Down move through the entries (headings are
-    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button.
+  - Entries are **not** popup cells: they live in their own container, outside the `pointerdown`
+    activation, and act on **click**, so swiping the list to scroll it on a touch screen doesn't
+    pick a font. `pointerdown` and `mousedown` are still prevented, to keep the editor's focus and
+    selection. Checked in Chromium (2026-10-26): with `pointerdown` prevented, a tap still fires
+    `click` and a swipe scrolls the list without one.
+  - **Keyboard**: the Font button is in the ring's second row. Enter on it opens the list with the
+    ring on the checked entry (or Default); Up and Down move through the entries (headings are
+    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button. With the
+    bar pinned and nothing selected, keys go to the note as before (§7.8).
   - Works in both modes (README §3.6): in raw mode picking a font writes the marker, which shows as
     text.
-- **Not included:** font sizes, italics, a per-note default font, uploading fonts from the app, and
-  checking that a font in `monospace/` really is monospaced (the folder is the admin's word).
-- **Tests.** Unit: options and block-font parsing, serialization, the operation (text, code
-  characters with mono and other fonts, blocks, Default, Clear formatting, links, bare URLs,
-  headings) and `formatState`. Server: the folder scan (files, folders, variable and static faces,
-  skipped weights and italics, ignored files, nesting, ids and collisions, missing folders), the two
-  routes (login, 404, headers, `HEAD`) and `FONTS_DIR`. Browser: small OFL-licensed fixture fonts
-  under `test/fixtures/fonts/`; the list, picking on text, code and blocks, the rendering rules,
-  missing fonts, raw mode, keyboard, and touch scrolling of the list on the phone project.
-- On approval, the build folds this into §4, §5.1, §5.5, §6.2–6.4, §7.8 and §10.
+- **Changes to README behavior** (owner-approved with this feature): the popup's second row (§3.6);
+  inside a code block, Font works as well as `</>` (§3.6); Clear formatting also removes fonts
+  (§3.6); highlights can change the font (§4.3); a font-only highlight has no side padding (§4.3).
+- **Not included:** font sizes, italics, a per-note default font, uploading fonts from the app, font
+  collections, and refusing a "monospace" font that isn't fixed-pitch.
+- **Tests.**
+  - Unit: the options and block-font grammar (ids at 47/48/49 characters, hyphens, invalid font
+    words); the random round-trip alphabet gains font options and fences with fonts; a font-only run
+    serializes and re-parses; `fixEquals` at `=` next to a font; every existing operation keeps a font
+    (B, U, color, Remove color, Link, Section, heading recolor, inline `</>`); the font operation
+    (text, inline code with monospace and other fonts, blocks, text plus blocks, a cursor in a block,
+    Default everywhere, nothing to change, a bare URL refused, a link split, headings, selection kept);
+    Clear formatting; `formatState`. Engine: typing at both edges and inside a font run, Enter,
+    Backspace, paste, transpose, and copying part of a line.
+  - Server: metadata from sfnt, WOFF and WOFF2 files that a test helper builds with chosen `name`,
+    `OS/2`, `fvar`, `head` and `post` tables; the scan (grouping across folders and formats, variable
+    preferred, the regular and bold choice, italics skipped, `.ttc` and `.zip` logged, dotfiles,
+    `__MACOSX`, symlinks refused, unreadable and broken files skipped, ids, truncation and collisions,
+    a missing folder, the fixed-pitch warning); file trees laid out like the real Fira Code, JetBrains
+    Mono, Source Code Pro, Inter, Google Fonts and Nerd Fonts downloads; the routes (login, 404 for a
+    wrong id, hash or extension, headers, `HEAD`, no `no-store`); `FONTS_DIR`.
+  - Browser: small OFL-licensed fonts with their licence under `test/fixtures/fonts/`. The list and
+    its check marks, picking on text, inline code, blocks and mixed selections, the effective-font
+    rules (computed `font-family`, `document.fonts` loaded), ligatures, padding, missing fonts, raw
+    mode, the keyboard, the re-measure after a font whose download is held back, and on the phone
+    project a tap that applies and a swipe that scrolls without applying.
+- On approval, the build folds this into §4, §5.1, §5.2, §5.5, §6.2–6.4, §7.6–7.8, §9 and §10.
