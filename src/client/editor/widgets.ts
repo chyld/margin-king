@@ -142,7 +142,10 @@ export class CopyWidget extends WidgetType {
   }
 }
 
-/** README §3.12: a thin line with a diamond at each end, broken by three dots in a triangle. */
+/**
+ * README §3.12: a thin line with a diamond at each end, broken by three dots in a triangle (in the
+ * brand colors, the owner's choice). Laid out with flexbox so only the lines stretch.
+ */
 export class EofWidget extends WidgetType {
   eq(): boolean {
     return true;
@@ -152,9 +155,9 @@ export class EofWidget extends WidgetType {
     el.className = "cm-eof";
     el.setAttribute("aria-hidden", "true");
     el.innerHTML =
-      '<svg viewBox="0 0 400 14" preserveAspectRatio="none"><path class="cm-eof-line" d="M7 7H186M214 7H393"/>' +
-      '<path class="cm-eof-diamond" d="M1 7l4-4 4 4-4 4zM391 7l4-4 4 4-4 4z"/></svg>' +
-      '<span class="cm-eof-dots"><i></i><i></i><i></i></span>';
+      '<i class="cm-eof-diamond"></i><span class="cm-eof-line"></span>' +
+      '<span class="cm-eof-dots"><i></i><i></i><i></i></span>' +
+      '<span class="cm-eof-line"></span><i class="cm-eof-diamond"></i>';
     return el;
   }
   ignoreEvent(): boolean {

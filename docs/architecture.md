@@ -1181,4 +1181,6 @@ area's width instead of stopping at 920px (README §4.6); the trash banner match
 favicon and logo icon (README §4.6) are redrawn: a white lowercase "m" on a smooth violet rounded
 square with a soft top sheen, and a small amber dot (`public/favicon.svg`, used by every page). The
 palette button's icon is a line-drawn highlighter over a coral → amber → mint → violet stroke,
-instead of a palette with four paint dots (README §4.6).
+instead of a palette with four paint dots (README §4.6). The end-of-file marker keeps README §3.12's
+shape, but its three dots are violet, magenta and orange (the brand gradient), and it's laid out so
+only the lines stretch: the end diamonds stay square at any width.
