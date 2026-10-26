@@ -28,3 +28,12 @@ commit per review, each with tests that fail without it.
 | 6 | Mac Roman names decoded as Latin-1 | Already fixed (Sol #5) |
 | 7 | A font list opened before the installed fonts arrive stays without them | Fixed: rebuilt when they arrive, keeping its focus; tested with the list request held back |
 | 8 | The ligature tests check CSS only | Fixed: a Fira Code fixture; the test draws a code line with and without ligatures and requires a difference, and none for default code |
+
+## Kimi K3.1 Pro — 4 findings
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | No size ceiling on files or decompressed tables | Already fixed (Sol #1) |
+| 2 | A symlinked `monospace/` or `other/` folder is followed | Already fixed (Sol #2) |
+| 3 | An inflated WOFF table's length isn't checked against its declared length | Already fixed (Sol #1: it must unpack to exactly its declared length, and a table longer packed than unpacked is refused) |
+| 4 | Mac Roman names decoded as Latin-1 | Already fixed (Sol #5) |
