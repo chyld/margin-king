@@ -3,7 +3,7 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { analysisField, bypass, noteFacet, toggleSection } from "./fields.ts";
 import { copyToClipboard } from "./clipboard.ts";
-import { setImageWidth, setLineWidth, startResize } from "./resize.ts";
+import { cancelResize, setImageWidth, setLineWidth, startResize } from "./resize.ts";
 
 function toggle(view: EditorView, key: string): void {
   view.dispatch({ effects: toggleSection.of(key), annotations: bypass.of(true) });
@@ -128,6 +128,10 @@ export class ImageWidget extends WidgetType {
   }
   get estimatedHeight(): number {
     return 160;
+  }
+  /** Removed mid-drag (a mode or note switch, an undo): the drag ends without writing. */
+  destroy(dom: HTMLElement): void {
+    cancelResize(dom);
   }
   /** The editor handles clicks on the image (placing the caret), not on the resize handle. */
   ignoreEvent(e: Event): boolean {

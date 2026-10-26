@@ -42,6 +42,14 @@ export function setImageWidth(view: EditorView, wrap: HTMLElement, width: number
 /** When each screenshot's handle was last tapped (touch screens have no reliable dblclick). */
 const lastTap = new WeakMap<HTMLElement, number>();
 
+/** How to end the drag running on each screenshot, so the widget can end it when it goes away. */
+const running = new WeakMap<HTMLElement, () => void>();
+
+/** Ends a drag on this screenshot without writing (the widget is being removed). */
+export function cancelResize(wrap: HTMLElement): void {
+  running.get(wrap)?.();
+}
+
 /**
  * A drag on the handle: the image follows the pointer; letting go writes the width. Esc cancels.
  * Moves under a few pixels (more for a finger) don't count, so a tap or a jiggle writes nothing; a
@@ -81,6 +89,7 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   const finish = (commit: boolean) => {
     if (done.signal.aborted) return;
     done.abort();
+    running.delete(wrap);
     label.remove();
     wrap.classList.remove("is-resizing");
     // Back to what the line says now (an undo mid-drag may have changed it); a committed width
@@ -100,6 +109,7 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
       }
     }
   };
+  running.set(wrap, () => finish(false));
   const mine = (ev: PointerEvent) => ev.pointerId === e.pointerId;
   const opts = { signal: done.signal, capture: true };
   window.addEventListener(

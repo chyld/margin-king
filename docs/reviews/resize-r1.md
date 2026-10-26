@@ -28,3 +28,10 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 | 1 | A natural-size screenshot narrower than 10% of the column jumps to 10% on the first move, even when dragged left | Fixed: it stays at its natural size (the label shows its real share) and nothing is written until the pointer passes 10%. Testing it also showed the handle's hit area covering a small image entirely (Sonnet noted this too); the handle now straddles the image's right edge with its hit area reaching outward |
 | 2 | A second finger or a stylus can start a competing drag on the same handle | Fixed: only a primary pointer starts a drag, and not while one is running (pointer ids were already checked, Sonnet #3) |
 | 3 | Missing tests | Added: an image under 10%, the second of two images, an image in a colored section, a missing image, and engine tests with a sized screenshot line; redo and a mode switch mid-drag were already added |
+
+## Kimi K3.1 Pro — fix first (2 findings)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | On a phone the invisible handle can be dragged without the activating tap, and blocks scrolling | Already fixed (Sonnet #1); tested |
+| 2 | A drag whose widget is destroyed (Ctrl+E, a note replaced) leaks the capture-phase Esc listener | Already fixed (Sonnet #3, tested with Sol #2). Kimi's suggested belt-and-braces added too: the widget's `destroy` ends any drag running on it, so the cleanup doesn't depend on a browser firing `lostpointercapture`; tested with an undo that removes the screenshot mid-drag |

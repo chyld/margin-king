@@ -222,3 +222,21 @@ test("a missing screenshot has no resize handle (Muse resize #3)", async ({ page
   await expect(page.locator(".cm-shot-missing")).toHaveText("Missing screenshot");
   await expect(page.locator(".cm-shot-handle")).toHaveCount(0);
 });
+
+test("an undo that removes the screenshot mid-drag ends the drag (Kimi resize #2)", async ({ page }) => {
+  await newNoteWithShot(page);
+  const { x, y } = await grab(page);
+  await page.mouse.move(x - 80, y, { steps: 4 });
+  await page.keyboard.press("Control+z"); // Undoes the test's setup, which put the screenshot in.
+  await page.mouse.up();
+  await expect(page.locator(".cm-shot")).toHaveCount(0);
+  await expect(page.locator(".cm-shot-size")).toHaveCount(0);
+  expect(await raw(page)).not.toContain("![");
+  const escapes = await page.evaluate(() => {
+    let n = 0;
+    document.addEventListener("keydown", (e) => e.key === "Escape" && n++);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return n;
+  });
+  expect(escapes).toBe(1);
+});
