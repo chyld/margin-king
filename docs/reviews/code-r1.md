@@ -50,3 +50,13 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 7 | The abandoned-login abort listens on the request (fires after the body), not the response | Fixed: it listens on the response's `close` |
 | 8 | New note leaves the old note writable during the request | Already fixed (Sol #2) |
 | 9 | Test gaps | Added: session renewal, expiry and on-disk hashing; 413 and 415; piped passwords; the earlier regressions |
+
+## GLM-5.3 Flash — fix first (5 findings; ~230k fuzzed edits, no crashes)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | A stale composition repair writes note A's formatting into note B | Already fixed (Sol #4) |
+| 2 | `margin-user` exits holding the lock (concurrent `add` of the same name) | Already fixed (Sol #6) |
+| 3 | The listing benchmark asserts 1,500 ms against a 150 ms target | Fixed: 300 ms (2× for a loaded machine) |
+| 4 | Empty trash: filtered count; disabled when a search hides every trashed note | Count already fixed (Sol #3); the button is now only disabled when the trash really is empty |
+| 5 | A composition starting within 30 ms of another drops the first one's repair | Fixed: the earlier snapshot is kept so one repair covers both; the repair diff is anchored at the caret, so a typed `]` isn't mistaken for the link's own |

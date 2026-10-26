@@ -269,13 +269,15 @@ export const invariantFilter = EditorState.transactionFilter.of((tr) => {
 let snapshot: { text: string; head: number; note: NoteInfo } | null = null;
 let repairTimer = 0;
 
-function singleDiff(a: string, b: string): { from: number; to: number; insert: string } | null {
+/** The single change from a to b; `anchor` caps the common prefix (a composition starts at the caret). */
+function singleDiff(a: string, b: string, anchor = Infinity): { from: number; to: number; insert: string } | null {
   if (a === b) return null;
   let pre = 0;
-  const max = Math.min(a.length, b.length);
-  while (pre < max && a[pre] === b[pre]) pre++;
+  const shorter = Math.min(a.length, b.length);
+  const maxPre = Math.min(shorter, anchor);
+  while (pre < maxPre && a[pre] === b[pre]) pre++;
   let suf = 0;
-  while (suf < max - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  while (suf < shorter - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
   return { from: pre, to: a.length - suf, insert: b.slice(pre, b.length - suf) };
 }
 
@@ -286,7 +288,7 @@ function repair(view: EditorView): void {
   // The snapshot belongs to the state it was taken in; a newly opened note is left alone.
   if (view.state.facet(noteFacet) !== snap.note) return;
   const current = view.state.doc.toString();
-  const d = singleDiff(snap.text, current);
+  const d = singleDiff(snap.text, current, snap.head);
   if (!d) return;
   const ctx = makeCtx(snap.text, view.state.field(collapsedField));
   const r = d.insert ? insertText(ctx, d.from, d.to, d.insert, "type") : deleteRange(ctx, d.from, d.to);
@@ -303,14 +305,23 @@ function repair(view: EditorView): void {
 
 export const compositionHandlers = EditorView.domEventHandlers({
   compositionstart(_e, view) {
-    window.clearTimeout(repairTimer);
     composition.active = true;
+    if (repairTimer && snapshot && snapshot.note === view.state.facet(noteFacet)) {
+      // A composition starting right after another: keep the earlier snapshot, so one repair at
+      // the end covers both.
+      window.clearTimeout(repairTimer);
+      repairTimer = 0;
+      return false;
+    }
+    window.clearTimeout(repairTimer);
+    repairTimer = 0;
     snapshot = { text: view.state.doc.toString(), head: view.state.selection.main.head, note: view.state.facet(noteFacet) };
     return false;
   },
   compositionend(_e, view) {
     // CodeMirror may still apply the last DOM change after this event.
     repairTimer = window.setTimeout(() => {
+      repairTimer = 0;
       composition.active = false;
       repair(view);
     }, 30);

@@ -35,5 +35,6 @@ test("listing and searching 2,000 notes stays fast (architecture §8: target und
   }
   const best = Math.min(...times);
   console.log(`2,000-note search: best ${best.toFixed(0)} ms`);
-  assert.ok(best < 1500, `too slow: ${best} ms`);
+  // The target is 150 ms (architecture §8); allow 2× for a loaded test machine.
+  assert.ok(best < 300, `too slow: ${best} ms`);
 });

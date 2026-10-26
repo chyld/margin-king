@@ -93,7 +93,8 @@ export function mountSidebar(store: Store, actions: Actions): void {
         list.replaceChildren(...s.notes.map((n) => card(n, s, actions)));
       }
     }
-    $(".empty-trash", root).toggleAttribute("disabled", !s.notes.length);
+    // Empty trash acts on the whole trash, so a search that hides every note doesn't disable it.
+    $(".empty-trash", root).toggleAttribute("disabled", s.listLoaded && !s.notes.length && !s.view.query.trim());
   };
   store.subscribe((s, prev) => render(s, prev));
   render(store.get(), null);

@@ -204,3 +204,21 @@ test("a right-click on a popup button does nothing (Sonnet r1 #5)", async ({ pag
   await page.locator(".fmt-popup .fmt-b").click({ button: "right" });
   expect(await raw(page)).toBe("x word y");
 });
+
+test("two compositions back to back are both repaired (GLM r1 #5)", async ({ page }) => {
+  await newNoteWith(page, "[d](https://a.com)");
+  await select(page, 2);
+  await page.evaluate(() => {
+    const v = (window as any).margin.view;
+    const fire = (type: string) => v.contentDOM.dispatchEvent(new CompositionEvent(type, { bubbles: true, data: "" }));
+    fire("compositionstart");
+    v.dispatch({ changes: { from: 2, insert: "]" }, userEvent: "input.type.compose" });
+    fire("compositionend");
+    fire("compositionstart");
+    v.dispatch({ changes: { from: 3, insert: "x" }, userEvent: "input.type.compose" });
+    fire("compositionend");
+  });
+  await page.waitForTimeout(150);
+  // The typed ] splits the link instead of breaking it (both compositions went through the engine).
+  expect(await raw(page)).toBe("[d](https://a.com)]x");
+});
