@@ -2,10 +2,10 @@
 
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fontId, FontError, loadFonts, readFaceInfo } from "../../src/server/fonts.ts";
+import { fontId, FontError, loadFonts, MAX_FONT_FILE, readFaceInfo } from "../../src/server/fonts.ts";
 import { configFromEnv } from "../../src/server/main.ts";
 import { sfnt, woff, woff2, type FakeFont } from "./fontfiles.ts";
 import { cli, Client, start, type Running } from "./helpers.ts";
@@ -62,6 +62,8 @@ describe("reading a font file's metadata", () => {
     assert.deepEqual(readFaceInfo(woff2({ family: "A", wght: [300, 700] })).range, [300, 700]);
     assert.equal(readFaceInfo(sfnt({ family: "A", fixedPitch: true })).fixedPitch, true);
     assert.equal(readFaceInfo(sfnt({ family: "Mac Name", mac: true })).family, "Mac Name");
+    // Mac Roman isn't Latin-1: 0x8E is é (Sol code r1 #5).
+    assert.equal(readFaceInfo(sfnt({ family: "Caf\u008e Cr\u008fme", mac: true })).family, "Café Crème");
     assert.equal(readFaceInfo(sfnt({ family: "A", weight: 7 })).weight, 700);
   });
 
@@ -79,6 +81,28 @@ describe("reading a font file's metadata", () => {
     assert.equal(why(Buffer.from("ttcf....")), "font collections aren't supported");
     assert.equal(why(sfnt({ family: "A" }).subarray(0, 40)), "the file is cut short");
     assert.equal(why(Buffer.alloc(2)), "the file is cut short");
+  });
+
+  test("a table that unpacks to more than it declares is refused, before it's all unpacked (Sol code r1 #1)", () => {
+    const why = (b: Buffer) => {
+      try {
+        readFaceInfo(b);
+        return "read";
+      } catch (err) {
+        return (err as Error).message;
+      }
+    };
+    // 2 MB of zeros pack to a few KB; the file says the table is 16 KB.
+    const lie = { family: "Bomb", padName: 2 * 1024 * 1024, declareName: 16 * 1024 };
+    assert.equal(why(woff(lie)), "its name table doesn't unpack to its size");
+    assert.equal(why(woff2(lie)), "its tables don't unpack to their size");
+    // A table that claims to be huge isn't unpacked at all.
+    assert.equal(why(woff({ ...lie, declareName: 64 * 1024 * 1024 })), "its name table is too large");
+    assert.equal(why(woff2({ ...lie, declareName: 300 * 1024 * 1024 })), "its tables are too large");
+    // A packed table longer than the original isn't valid.
+    assert.equal(why(woff({ ...lie, declareName: 100 })), "its name table is longer packed than unpacked");
+    // The honest version reads.
+    assert.equal(readFaceInfo(woff({ family: "Fine", padName: 2 * 1024 * 1024 })).family, "Fine");
   });
 });
 
@@ -160,6 +184,23 @@ describe("scanning the folders", () => {
     assert.match(r.log, /link\.ttf is a symlink; skipped/);
     assert.match(r.log, /linked-dir is a symlink; skipped/);
     assert.doesNotMatch(r.log, /Outside/);
+  });
+
+  test("a symlinked monospace/ or other/ folder isn't followed (Sol code r1 #2)", async () => {
+    const outside = await tree({ "real.ttf": ttf({ family: "Outside" }) });
+    const root = await tree({ "other/A.ttf": ttf({ family: "A" }) });
+    await symlink(outside, join(root, "monospace"));
+    const r = await scan(root);
+    assert.deepEqual(r.fonts.map((f) => f.name), ["A"]);
+    assert.match(r.log, /monospace\/ in .* is a symlink; no monospace fonts/);
+  });
+
+  test("a file over the size limit is skipped without being read", async () => {
+    const root = await tree({ "other/A.ttf": ttf({ family: "A" }), "other/Huge.ttf": "" });
+    await truncate(join(root, "other", "Huge.ttf"), MAX_FONT_FILE + 1);
+    const r = await scan(root);
+    assert.deepEqual(r.fonts.map((f) => f.name), ["A"]);
+    assert.match(r.log, /other\/Huge\.ttf: it's larger than 64 MB; skipped/);
   });
 
   test("dotfiles and __MACOSX are skipped at every depth, silently", async () => {

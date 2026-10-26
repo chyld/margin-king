@@ -195,3 +195,13 @@ test("fonts: formatState reports the font, mixed fonts and code-only targets", (
   const { text, from, to } = sel("```\nx‸\n```");
   assert.equal(formatState(formatCtx(text), from, to, true).hasTarget, true);
 });
+
+test("fonts: a selection ending at the start of the next line keeps the block it covers (Sol code r1 #3)", () => {
+  assert.equal(fmt("«intro\n```\nx\n```\n»end", mono("a")), "=={font-a}«intro==\n```font-a\nx\n```\n»end");
+  assert.equal(fmt("intro«\n```\nx\n```\nend»", mono("a")), "intro«\n```font-a\nx\n```\n=={font-a}end»==");
+});
+
+test("fonts: formatState lists every font stored in the target, for the Font button (Sol code r1 #4)", () => {
+  const { text, from, to } = sel("«plain =={font-a}x==\n```font-gone\ny»\n```");
+  assert.deepEqual(formatState(formatCtx(text), from, to, false).fonts, ["a", "gone"]);
+});

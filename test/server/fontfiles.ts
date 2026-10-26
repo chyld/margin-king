@@ -16,8 +16,12 @@ export interface FakeFont {
   /** A `wght` axis. */
   wght?: [number, number];
   fixedPitch?: boolean;
-  /** Write the names as Mac Roman only. */
+  /** Write the names as Mac Roman only (each character's code is the byte written). */
   mac?: boolean;
+  /** Pad the `name` table with this many zero bytes (a table that packs very small). */
+  padName?: number;
+  /** The `name` table's length as the file declares it, if not its real length. */
+  declareName?: number;
 }
 
 function nameTable(f: FakeFont): Buffer {
@@ -42,7 +46,7 @@ function nameTable(f: FakeFont): Buffer {
     head.writeUInt16BE(offset, at + 10);
     offset += strings[i].length;
   });
-  return Buffer.concat([head, ...strings]);
+  return Buffer.concat([head, ...strings, Buffer.alloc(f.padName ?? 0)]);
 }
 
 function tables(f: FakeFont): [string, Buffer][] {
@@ -113,7 +117,7 @@ export function woff(f: FakeFont): Buffer {
     head.write(tag, at, "latin1");
     head.writeUInt32BE(offset, at + 4);
     head.writeUInt32BE(stored.length, at + 8);
-    head.writeUInt32BE(body.length, at + 12);
+    head.writeUInt32BE(tag === "name" && f.declareName !== undefined ? f.declareName : body.length, at + 12);
     data.push(pad4(stored));
     offset += pad4(stored).length;
   });
@@ -142,7 +146,7 @@ export function woff2(f: FakeFont, arbitraryTags = false): Buffer {
     } else {
       dir.push(Buffer.from([WOFF2_INDEX[tag]]));
     }
-    dir.push(base128(body.length));
+    dir.push(base128(tag === "name" && f.declareName !== undefined ? f.declareName : body.length));
   }
   const compressed = brotliCompressSync(Buffer.concat(list.map(([, b]) => b)));
   const head = Buffer.alloc(48);

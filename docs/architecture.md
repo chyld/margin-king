@@ -1264,7 +1264,9 @@ picked code fonts show their ligatures; a word in another font with no color get
 - **Scanning never stops the server.** Every error (an unreadable file or folder, a file that
   vanishes, a broken font) is logged and that entry skipped. A missing folder means no fonts of
   that kind. Only **regular files and real directories** count: symlinks are skipped (and logged),
-  so nothing outside the font folders can be read. Names starting with `.` and `__MACOSX` folders
+  so nothing outside the font folders can be read. That includes `monospace/` and `other/`
+  themselves, and files are opened with `O_NOFOLLOW`, so one swapped for a symlink after the folder
+  was listed isn't followed either. Names starting with `.` and `__MACOSX` folders
   are skipped at every depth (macOS zips carry `._*` files that aren't fonts). Folders are walked to
   any depth, in code-unit name order.
 - **Font files.** `.woff2`, `.woff`, `.ttf` and `.otf` (any case), checked by their first bytes
@@ -1273,7 +1275,11 @@ picked code fonts show their ligatures; a word in another font with no color get
   files (licences, readmes) are counted in one line per folder.
 - **Reading a file's metadata** (`src/server/fonts.ts`, no dependencies). For WOFF the needed tables
   are inflated with `zlib`; for WOFF2 the table stream is decompressed with `zlib`'s Brotli (the
-  tables Margin reads are never transformed). From the tables:
+  tables Margin reads are never transformed). Hostile files can't exhaust memory: a file over 64 MB is
+  skipped unread; a table Margin reads may not claim more than 4 MB, nor a WOFF2 file's tables more
+  than 256 MB together; decompression stops at the declared size (`maxOutputLength`), and a table
+  that doesn't unpack to exactly that size, or a WOFF table longer packed than unpacked, makes the
+  file skipped. Names stored as Mac Roman are decoded as Mac Roman. From the tables:
   - **family**: `name` ID 16 (typographic family) if present, else ID 1, preferring Windows
     English (3/1/0x409, then any 3/1 or 3/10), then Mac Roman (1/0), then Unicode (0/*);
   - **weight**: `OS/2` `usWeightClass`;

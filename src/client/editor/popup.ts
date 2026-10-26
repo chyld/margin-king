@@ -314,9 +314,8 @@ class Popup {
     set(row0[3], st.section, st.onlyCode || st.sectionDisabled);
     set(row0[4], false, st.onlyCode);
     set(row1[0], !!st.link, st.onlyCode);
-    // Font: shown when fonts are installed, or the target's font isn't (so it can be removed).
-    const missing = !!st.font && !fontById(st.font);
-    row1[1].el.hidden = !installedFonts().length && !missing;
+    // Font: shown when fonts are installed, or the target has a font that isn't (so it can be removed).
+    row1[1].el.hidden = !installedFonts().length && !st.fonts.some((f) => !fontById(f));
     set(row1[1], !!st.font && !st.fontMixed, !st.fontable);
     set(row1[2], false, st.onlyCode);
     [...light, ...deep].forEach((c, i) => {

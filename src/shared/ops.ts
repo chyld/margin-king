@@ -72,6 +72,8 @@ export interface FormatState {
   codeOnly: boolean;
   /** Something in the target can take a font. */
   fontable: boolean;
+  /** Every font stored anywhere in the target (text, code, touched blocks), installed or not. */
+  fonts: string[];
 }
 
 export function formatCtx(text: string): FormatCtx {
@@ -166,6 +168,7 @@ export function formatState(ctx: FormatCtx, from: number, to: number, pinned: bo
     fontMixed: false,
     codeOnly: false,
     fontable: false,
+    fonts: [],
   };
   if (fonts) {
     const cs = fonts.p.targets.flat();
@@ -177,6 +180,8 @@ export function formatState(ctx: FormatCtx, from: number, to: number, pinned: bo
     );
     state.font = seen.size === 1 ? [...seen][0] : null;
     state.fontMixed = seen.size > 1;
+    const stored = [...cs.map((c) => c.style.font), ...fonts.blocks.map((b) => ctx.a.doc.blocks[b].font)];
+    state.fonts = [...new Set(stored.filter((f): f is string => f !== null))];
   }
   const range = target ?? { from, to };
   const { lines, targets } = prepare(ctx, range.from, Math.max(range.to, range.from));
@@ -478,12 +483,17 @@ function applyFont(ctx: FormatCtx, from: number, to: number, op: FontOp, pinned:
     }
   }
 
-  // The same text stays selected (README §3.6): ends on text lines from the serializer's carets,
-  // ends in code or fence lines mapped through the changes.
+  // The same text stays selected (README §3.6). An end on a line whose characters were targeted
+  // comes from the serializer's carets; any other end (in code or a fence, on a line with nothing
+  // selected, or at the start of the line after the selection) is mapped through the changes.
   const fence1 = fenceChanges.map((c) => ({ ...c, from: mapThrough(c.from, textChanges), to: mapThrough(c.to, textChanges) }));
   if (t.word && caret) return { ok: true, changes, anchor: caret.anchor, head: caret.head };
+  const targeted = (pos: number) => {
+    const i = t.p.lines.indexOf(lineAt(ctx.a, pos));
+    return i >= 0 && t.p.targets[i].length > 0;
+  };
   const end = (pos: number, fromCaret: number | undefined) =>
-    mapThrough(fromCaret !== undefined && isRichLine(lineAt(ctx.a, pos)) ? fromCaret : mapThrough(pos, textChanges), fence1);
+    mapThrough(fromCaret !== undefined && targeted(pos) ? fromCaret : mapThrough(pos, textChanges), fence1);
   return { ok: true, changes, anchor: end(from, caret?.anchor), head: end(to, caret?.head) };
 }
 

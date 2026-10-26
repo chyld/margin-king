@@ -3,7 +3,8 @@
 // Scanning never stops the server: every problem is logged and that entry skipped.
 
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { brotliDecompressSync, inflateSync } from "node:zlib";
 import { isFontId, MAX_FONT_ID } from "../shared/syntax.ts";
@@ -31,6 +32,12 @@ const FORMATS: Record<Format, { ext: string; type: string; rank: number }> = {
 };
 
 const FONT_EXTS = new Set([".woff2", ".woff", ".ttf", ".otf"]);
+/** Larger files are skipped: the biggest real fonts (CJK) are around 20 MB. */
+export const MAX_FONT_FILE = 64 * 1024 * 1024;
+/** A table Margin reads (`name`, `OS/2`, …) is a few KB; anything claiming more isn't trusted. */
+const MAX_TABLE = 4 * 1024 * 1024;
+/** What a WOFF2 file may decompress to, all tables together. */
+const MAX_WOFF2_TABLES = 256 * 1024 * 1024;
 const COLLECTION_EXTS = new Set([".ttc", ".otc"]);
 const WANTED = new Set(["name", "OS/2", "head", "post", "fvar"]);
 
@@ -77,8 +84,23 @@ function woffTables(buf: Buffer): Map<string, Buffer> {
     const compLength = buf.readUInt32BE(at + 8);
     const origLength = buf.readUInt32BE(at + 12);
     need(buf, offset + compLength);
+    if (origLength > MAX_TABLE) throw new FontError(`its ${name} table is too large`);
     const data = buf.subarray(offset, offset + compLength);
-    out.set(name, compLength < origLength ? inflateSync(data) : data);
+    // Equal lengths mean stored as is; a packed table longer than the original isn't valid WOFF.
+    if (compLength > origLength) throw new FontError(`its ${name} table is longer packed than unpacked`);
+    if (compLength === origLength) {
+      out.set(name, data);
+      continue;
+    }
+    // Inflated to at most the size it declares, and it must be exactly that.
+    let table: Buffer;
+    try {
+      table = inflateSync(data, { maxOutputLength: origLength });
+    } catch {
+      throw new FontError(`its ${name} table doesn't unpack to its size`);
+    }
+    if (table.length !== origLength) throw new FontError(`its ${name} table doesn't unpack to its size`);
+    out.set(name, table);
   }
   return out;
 }
@@ -129,12 +151,21 @@ function woff2Tables(buf: Buffer): Map<string, Buffer> {
     entries.push({ name, length });
   }
   need(buf, at + compressed);
-  const data = brotliDecompressSync(buf.subarray(at, at + compressed));
+  // Decompressed to at most the total the directory declares, and it must be exactly that.
+  const total = entries.reduce((n, e) => n + e.length, 0);
+  if (total > MAX_WOFF2_TABLES) throw new FontError("its tables are too large");
+  let data: Buffer;
+  try {
+    data = brotliDecompressSync(buf.subarray(at, at + compressed), { maxOutputLength: Math.max(1, total) });
+  } catch {
+    throw new FontError("its tables don't unpack to their size");
+  }
+  if (data.length !== total) throw new FontError("its tables don't unpack to their size");
   const out = new Map<string, Buffer>();
   let offset = 0;
   for (const e of entries) {
     if (WANTED.has(e.name)) {
-      if (offset + e.length > data.length) throw new FontError("the file is cut short");
+      if (e.length > MAX_TABLE) throw new FontError(`its ${e.name} table is too large`);
       out.set(e.name, data.subarray(offset, offset + e.length));
     }
     offset += e.length;
@@ -169,7 +200,7 @@ function nameOf(table: Buffer | undefined, id: number): string | null {
       text = utf16be(bytes);
     } else if (platform === 1 && encoding === 0) {
       rank = 2;
-      text = bytes.toString("latin1");
+      text = macRoman(bytes);
     } else if (platform === 0) {
       rank = 3;
       text = utf16be(bytes);
@@ -180,6 +211,17 @@ function nameOf(table: Buffer | undefined, id: number): string | null {
     if (text && (!best || rank < best.rank)) best = { rank, text };
   }
   return best?.text ?? null;
+}
+
+// Mac Roman's upper half (0x80–0xFF); the lower half is ASCII.
+const MAC_ROMAN =
+  "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø" +
+  "¿¡¬√ƒ≈∆«»…\u00a0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uf8ffÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
+
+export function macRoman(bytes: Buffer): string {
+  let out = "";
+  for (const b of bytes) out += b < 0x80 ? String.fromCharCode(b) : MAC_ROMAN[b - 0x80];
+  return out;
 }
 
 function utf16be(bytes: Buffer): string {
@@ -323,6 +365,19 @@ export class FontTable {
 
 type Log = (msg: string) => void;
 
+/** A font file's bytes: a regular file, not through a symlink, not over the size limit. */
+async function readFont(path: string): Promise<Buffer> {
+  const fh = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const st = await fh.stat();
+    if (!st.isFile()) throw new FontError("not a regular file");
+    if (st.size > MAX_FONT_FILE) throw new FontError(`it's larger than ${MAX_FONT_FILE / 1048576} MB`);
+    return await fh.readFile();
+  } finally {
+    await fh.close();
+  }
+}
+
 /** Every font file under `root/kind` (any depth): regular files and real directories only. */
 async function walk(root: string, kind: string, rel: string, out: string[], log: Log, ignored: { n: number }): Promise<void> {
   let entries;
@@ -380,9 +435,14 @@ export async function loadFonts(dir: string | undefined, log: Log = (m) => conso
   for (const kind of KINDS) {
     const root = join(dir, kind.dir);
     try {
-      await readdir(root);
+      // A real folder, not a symlink to somewhere else.
+      const st = await lstat(root);
+      if (!st.isDirectory()) {
+        log(`fonts: ${kind.dir}/ in ${dir} is ${st.isSymbolicLink() ? "a symlink" : "not a folder"}; no ${kind.dir} fonts`);
+        continue;
+      }
     } catch {
-      log(`fonts: no ${kind.dir}/ folder in ${dir}; no ${kind.dir === "monospace" ? "monospace" : "other"} fonts`);
+      log(`fonts: no ${kind.dir}/ folder in ${dir}; no ${kind.dir} fonts`);
       continue;
     }
     const paths: string[] = [];
@@ -396,7 +456,7 @@ export async function loadFonts(dir: string | undefined, log: Log = (m) => conso
     for (const rel of paths) {
       const path = join(root, rel);
       try {
-        const info = readFaceInfo(await readFile(path));
+        const info = readFaceInfo(await readFont(path));
         if (info.italic) {
           italics.add(info.family);
           continue;
@@ -427,7 +487,7 @@ export async function loadFonts(dir: string | undefined, log: Log = (m) => conso
       const faces: Face[] = [];
       for (const { cand, weight } of chooseFaces(families.get(name)!)) {
         try {
-          const bytes = await readFile(cand.path);
+          const bytes = await readFont(cand.path);
           if (readFaceInfo(bytes).family !== name) throw new FontError("it changed while being read");
           const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 12);
           const f = FORMATS[cand.info.format];

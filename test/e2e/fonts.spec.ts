@@ -6,7 +6,9 @@ import { login, newNoteWith, raw, select, setText } from "./helpers.ts";
 
 const family = (page: Page, selector: string) => page.locator(selector).first().evaluate((el) => getComputedStyle(el).fontFamily);
 const listNames = (page: Page) => page.locator(".fmt-font-list").evaluate((l) => [...l.children].map((c) => `${c.className.includes("fmt-font-head") ? "#" : ""}${c.textContent}${c.classList.contains("is-current") ? " ✓" : ""}`));
-const loaded = (page: Page, id: string) => page.evaluate((f) => document.fonts.check(`16px "margin-font-${f}"`), id);
+/** Whether a face of the font exists and has loaded (`check` alone is true for a family with no faces). */
+const loaded = (page: Page, id: string) =>
+  page.evaluate(async (f) => (await document.fonts.load(`16px "margin-font-${f}"`)).some((face) => face.status === "loaded"), id);
 
 test("the Font list replaces the swatches; picking a font applies it and closes the list", async ({ page }) => {
   await login(page);
