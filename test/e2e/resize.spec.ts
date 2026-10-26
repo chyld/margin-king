@@ -77,8 +77,8 @@ test("a jiggle on the handle writes nothing (Sonnet resize #2)", async ({ page }
   const y = box.y + box.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + 2, y);
-  await page.mouse.move(x + 1, y);
+  await page.mouse.move(x + 4, y);
+  await page.mouse.move(x + 3, y);
   await page.mouse.up();
   expect(await raw(page)).toBe(`before\n![](${name})\nafter`);
 });
@@ -239,4 +239,40 @@ test("an undo that removes the screenshot mid-drag ends the drag (Kimi resize #2
     return n;
   });
   expect(escapes).toBe(1);
+});
+
+test("on a screenshot taller than the window the handle is where the pointer is (DeepSeek resize #1)", async ({ page }) => {
+  const name = await newNoteWithShot(page, "", [400, 1600]);
+  const img = page.locator(".cm-shot img");
+  await img.hover({ position: { x: 200, y: 120 } });
+  const imgBox = (await img.boundingBox())!;
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.y).toBeGreaterThan(0);
+  expect(box.y + box.height).toBeLessThan(viewport.height);
+  expect(Math.abs(box.y + box.height / 2 - (imgBox.y + 120))).toBeLessThan(12);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 100, box.y + box.height / 2, { steps: 5 });
+  const label = (await page.locator(".cm-shot-size").boundingBox())!;
+  expect(label.y + label.height).toBeLessThan(viewport.height);
+  await page.mouse.up();
+  await expect.poll(() => raw(page)).toMatch(new RegExp(`!\\[\\d+%\\]\\(${name.replace(".", "\\.")}\\)`));
+});
+
+test("a resized screenshot keeps its width after saving and reopening (DeepSeek resize #6)", async ({ page }) => {
+  const name = await newNoteWithShot(page);
+  await drag(page, -120);
+  const sized = await raw(page);
+  await page.evaluate(() => (window as any).margin.view.focus());
+  await page.keyboard.press("Control+s");
+  await expect(page.locator(".save")).toHaveAttribute("data-state", "saved");
+  const id = await page.evaluate(() => (window as any).margin.store.get().open.summary.id);
+  await page.goto(`/?note=${id}`);
+  await expect.poll(() => raw(page)).toBe(sized);
+  const pct = Number(/!\[(\d+)%\]/.exec(sized)![1]);
+  await expect.poll(() => page.locator(".cm-shot img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(400);
+  const column = await columnWidth(page);
+  expect(Math.abs((await shotWidth(page)) - (column * pct) / 100)).toBeLessThan(1);
+  expect(sized).toContain(name);
 });

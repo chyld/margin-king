@@ -399,7 +399,8 @@ always writes `\n`.)
    (the optional width is the owner's resizing addition, §15).
 4. Everything else is `text`.
 
-Each line: `{ index, from, to, kind, block?, section?, heading?: { color, prefixLen }, image? }`.
+Each line: `{ index, from, to, kind, block?, section?, heading?: { color, prefixLen }, image?, imageWidth? }`
+(`imageWidth`: a resized screenshot's width in %, or null; §15).
 
 **`parseInline(lineText) → Token[]`**: left to right; at each position the first match wins:
 
@@ -1197,11 +1198,16 @@ changes; only how wide it's shown.
   width travels with copy and paste, undo and redo, and is plain text in raw mode.
 - **Display.** A sized screenshot is that share of the column wide (larger than its pixels if asked),
   its height following its aspect ratio, left-aligned like text.
-- **Handle.** In render mode, on an editable note, a slim pill on the image's right edge shows on
-  hover, or after a tap on the image on a touch screen (until a tap elsewhere). Dragging it resizes the
-  image live with a "60%" label, clamped to 10–100%; letting go writes the width into the line as one
-  `bypass` transaction (`input.resize`, its own undo step via `isolateHistory`). Esc during a drag
-  cancels it. Double-clicking the handle writes `![](name.png)`. The widget keeps the same `<img>`
-  when only the width changes (`updateDOM`), so nothing reloads or flickers. Read-only notes have no
-  handle.
+- **Handle.** In render mode, on an editable note, a slim pill straddling the image's right edge
+  shows on hover, or after a tap on the image on a touch screen (until a tap elsewhere); it sits at
+  the pointer's (or the tap's) height, so a screenshot taller than the window shows it where you
+  are. A hidden handle takes no touches, so a swipe there scrolls. Dragging it resizes the image
+  live with a "60%" label beside it, clamped to 10–100% (a natural-size screenshot already narrower
+  than 10% stays as it is until dragged past 10%); letting go writes the width into the line as one
+  `bypass` transaction (`input.resize`, its own undo step via `isolateHistory`). A move under 5px
+  (8px with a finger), or a natural-size screenshot left at its own size, writes nothing. Esc during
+  a drag cancels it, and so does the widget going away (a mode or note switch, an undo). Double-
+  clicking the handle (double-tapping it on a touch screen) writes `![](name.png)`. The widget keeps
+  the same `<img>` when only the width changes (`updateDOM`), so nothing reloads or flickers.
+  Read-only notes have no handle.
 

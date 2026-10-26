@@ -1045,7 +1045,8 @@ button {
    small screenshot keeps most of itself clickable. */
 .cm-shot-handle {
   position: absolute;
-  top: 50%;
+  /* At the pointer's height (--handle-y, set by the widget), kept on the image. */
+  top: clamp(min(28px, 50%), var(--handle-y, 50%), max(calc(100% - 28px), 50%));
   right: -3px;
   width: 6px;
   height: min(44px, 40%);
@@ -1097,8 +1098,9 @@ button {
 }
 .cm-shot-size {
   position: absolute;
-  top: 14px;
-  right: 10px;
+  top: clamp(min(28px, 50%), var(--handle-y, 50%), max(calc(100% - 28px), 50%));
+  right: 14px;
+  transform: translateY(-50%);
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(24, 20, 48, 0.72);

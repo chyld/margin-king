@@ -42,3 +42,14 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 |---|---|---|
 | 1 | The invisible handle resizes on a phone without a tap, and a swipe from it doesn't scroll | Already fixed (Sonnet #1): a hidden handle is `pointer-events: none`; tested with a finger drag before any tap |
 | 2 | A drag that loses its widget (Ctrl+E, scrolled out, `editor.clear()`) swallows the next Esc | Already fixed (Sonnet #3, Kimi #2): `lostpointercapture` and the widget's `destroy` both end the drag; tested for a mode switch, a note switch and an undo |
+
+## DeepSeek V4.1 Flash — fix first (6 findings, reviewed at `b4f07bb`)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | The handle is centred on the image, so on a screenshot taller than the window it's off-screen | Fixed: it sits at the pointer's height (the tap's on a touch screen), kept on the image by CSS `clamp`; the % label sits beside it |
+| 2 | On touch, a drag that comes back near its start counts as a tap, and after a tap it resets the width | Fixed: a double tap needs two taps with no drag; any drag forgets the earlier tap |
+| 3 | A 3px slip writes a width (and dirties the note) | Fixed: 5px for a mouse, and a natural-size screenshot left at its own size writes nothing |
+| 4 | The tap-to-show listener outlives a removed widget | Fixed: kept per widget and removed in `destroy` |
+| 5 | Docs out of date | Fixed: §15 and the README (double tap, the under-10% rule, the handle's position, the thresholds); `imageWidth` added to the line shape in §6 |
+| 6 | Missing tests | Added: a tall screenshot on desktop and phone, a finger drag out and back after a tap, the jiggle at 4px, save and reopen |

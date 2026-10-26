@@ -53,7 +53,7 @@ export function cancelResize(wrap: HTMLElement): void {
 /**
  * A drag on the handle: the image follows the pointer; letting go writes the width. Esc cancels.
  * Moves under a few pixels (more for a finger) don't count, so a tap or a jiggle writes nothing; a
- * double tap on a touch screen goes back to the natural size. If the widget goes away mid-drag (a
+ * double tap (two taps, no drag between) on a touch screen goes back to the natural size. If the widget goes away mid-drag (a
  * note switch, or scrolled out of the rendered range), the drag ends without writing.
  */
 export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLElement, e: PointerEvent): void {
@@ -64,7 +64,7 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   e.preventDefault();
   e.stopPropagation();
   const touch = e.pointerType !== "mouse";
-  const threshold = touch ? 8 : 3;
+  const threshold = touch ? 8 : 5;
   const style = getComputedStyle(line);
   const column = line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const startX = e.clientX;
@@ -97,8 +97,12 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
     applyWidth(wrap, lineWidth(wrap));
     view.requestMeasure();
     if (!commit || !wrap.isConnected) return;
-    if (moved && Math.abs(dx) >= threshold) {
-      if (width !== null) setImageWidth(view, wrap, width);
+    if (moved) {
+      // A drag is never half of a double tap.
+      lastTap.delete(wrap);
+      // Back where it started, or a natural-size screenshot left at its own size: nothing to write.
+      const unchanged = Math.abs(dx) < threshold || width === null || (lineWidth(wrap) === null && width === Math.round(startPct));
+      if (!unchanged) setImageWidth(view, wrap, width);
     } else if (touch) {
       const now = performance.now();
       if (now - (lastTap.get(wrap) ?? -Infinity) < 400) {

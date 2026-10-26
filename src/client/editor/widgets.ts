@@ -64,15 +64,30 @@ export class EllipsisWidget extends WidgetType {
   }
 }
 
+/** A shown handle's "tap elsewhere hides it" listener, so a removed widget can drop it. */
+const tapAway = new WeakMap<HTMLElement, (e: PointerEvent) => void>();
+
 function showHandle(wrap: HTMLElement): void {
   if (wrap.classList.contains("is-active")) return;
   wrap.classList.add("is-active");
   const away = (e: PointerEvent) => {
-    if (wrap.contains(e.target as Node)) return;
-    wrap.classList.remove("is-active");
-    document.removeEventListener("pointerdown", away, true);
+    if (!wrap.contains(e.target as Node)) hideHandle(wrap);
   };
+  tapAway.set(wrap, away);
   document.addEventListener("pointerdown", away, true);
+}
+
+function hideHandle(wrap: HTMLElement): void {
+  wrap.classList.remove("is-active");
+  const away = tapAway.get(wrap);
+  if (away) document.removeEventListener("pointerdown", away, true);
+  tapAway.delete(wrap);
+}
+
+/** The handle (and the drag's % label) sit at the pointer's height on the image's right edge, so a
+ *  screenshot taller than the window shows them where you are; CSS keeps them on the image. */
+function placeHandle(wrap: HTMLElement, clientY: number): void {
+  wrap.style.setProperty("--handle-y", `${clientY - wrap.getBoundingClientRect().top}px`);
 }
 
 export class ImageWidget extends WidgetType {
@@ -120,7 +135,12 @@ export class ImageWidget extends WidgetType {
     });
     // Touch screens have no hover: a tap on the image shows its handle until a tap elsewhere.
     wrap.addEventListener("pointerdown", (e) => {
-      if (e.pointerType !== "mouse" && e.target !== handle) showHandle(wrap);
+      if (e.pointerType === "mouse" || e.target === handle) return;
+      placeHandle(wrap, e.clientY);
+      showHandle(wrap);
+    });
+    wrap.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" && !wrap.classList.contains("is-resizing")) placeHandle(wrap, e.clientY);
     });
     wrap.append(img, handle);
     setLineWidth(wrap, this.width);
@@ -129,9 +149,10 @@ export class ImageWidget extends WidgetType {
   get estimatedHeight(): number {
     return 160;
   }
-  /** Removed mid-drag (a mode or note switch, an undo): the drag ends without writing. */
+  /** Removed (a mode or note switch, an undo): a drag on it ends without writing, and its listeners go. */
   destroy(dom: HTMLElement): void {
     cancelResize(dom);
+    hideHandle(dom);
   }
   /** The editor handles clicks on the image (placing the caret), not on the resize handle. */
   ignoreEvent(e: Event): boolean {

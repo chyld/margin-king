@@ -34,6 +34,13 @@ async function finger(page: Page) {
       for (let i = 1; i <= 6; i++) await send("touchMove", x + (dx * i) / 6, y);
       await send("touchEnd", x + dx, y);
     },
+    /** One touch that goes `dx` sideways and comes back to within 2px of where it started. */
+    async outAndBack(x: number, y: number, dx: number) {
+      await send("touchStart", x, y);
+      for (let i = 1; i <= 5; i++) await send("touchMove", x + (dx * i) / 5, y);
+      for (let i = 4; i >= 0; i--) await send("touchMove", x + (dx * i) / 5 + 2, y);
+      await send("touchEnd", x + 2, y);
+    },
     async tap(x: number, y: number) {
       await send("touchStart", x, y);
       await send("touchEnd", x, y);
@@ -73,4 +80,29 @@ test("phone: a double tap on the handle goes back to the natural size (Sonnet re
   expect(await line2(page)).toBe(`![80%](${name})`);
   await f.tap(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(() => line2(page)).toBe(`![](${name})`);
+});
+
+test("phone: a drag that comes back to its start isn't a double tap (DeepSeek resize #2)", async ({ page }) => {
+  await login(page);
+  const name = await newNoteWithShot(page, "60%");
+  await page.locator(".cm-shot img").tap();
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const f = await finger(page);
+  await f.tap(x, y);
+  await f.outAndBack(x, y, -150);
+  await page.waitForTimeout(200);
+  expect(await line2(page)).toBe(`![60%](${name})`);
+});
+
+test("phone: on a tall screenshot the handle shows where the image was tapped (DeepSeek resize #1)", async ({ page }) => {
+  await login(page);
+  await newNoteWithShot(page, "100%", [400, 1600]);
+  const img = page.locator(".cm-shot img");
+  await img.tap({ position: { x: 100, y: 80 } });
+  const imgBox = (await img.boundingBox())!;
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  expect(box.y + box.height).toBeLessThan(page.viewportSize()!.height);
+  expect(Math.abs(box.y + box.height / 2 - (imgBox.y + 80))).toBeLessThan(16);
 });
