@@ -14,6 +14,16 @@ export function applyWidth(wrap: HTMLElement, width: number | null): void {
   wrap.classList.toggle("is-sized", width !== null);
 }
 
+/** The width the line says (set by the widget), shown; a drag's preview goes back to it. */
+export function setLineWidth(wrap: HTMLElement, width: number | null): void {
+  wrap.dataset.width = width === null ? "" : String(width);
+  applyWidth(wrap, width);
+}
+
+function lineWidth(wrap: HTMLElement): number | null {
+  return wrap.dataset.width ? Number(wrap.dataset.width) : null;
+}
+
 /** Writes the width into the screenshot line the wrapper shows: one undo step of its own. */
 export function setImageWidth(view: EditorView, wrap: HTMLElement, width: number | null): void {
   if (view.state.readOnly) return;
@@ -50,7 +60,6 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   const column = line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const startX = e.clientX;
   const startPx = wrap.getBoundingClientRect().width;
-  const before = { width: wrap.style.width, sized: wrap.classList.contains("is-sized") };
   const clamp = (n: number) => Math.min(MAX_IMAGE_WIDTH, Math.max(MIN_IMAGE_WIDTH, n));
   let width = clamp(Math.round((startPx / column) * 100));
   let dx = 0;
@@ -69,9 +78,10 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
     done.abort();
     label.remove();
     wrap.classList.remove("is-resizing");
-    // Back to what the line says; a committed width comes back through the new line's widget.
-    wrap.style.width = before.width;
-    wrap.classList.toggle("is-sized", before.sized);
+    // Back to what the line says now (an undo mid-drag may have changed it); a committed width
+    // comes back through the new line's widget.
+    applyWidth(wrap, lineWidth(wrap));
+    view.requestMeasure();
     if (!commit || !wrap.isConnected) return;
     if (moved && Math.abs(dx) >= threshold) {
       setImageWidth(view, wrap, width);
@@ -97,6 +107,8 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
       width = clamp(Math.round(((startPx + dx) / column) * 100));
       applyWidth(wrap, width);
       label.textContent = `${width}%`;
+      // The lines below move: CodeMirror's height map and drawn caret follow.
+      view.requestMeasure();
     },
     opts,
   );

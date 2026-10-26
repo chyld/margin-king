@@ -12,3 +12,11 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 | 4 | Double-click to reset may never fire on iOS | Fixed: a double tap on the handle is counted directly on touch screens |
 | 5 | Missing tests | Added: hidden handle ignores a finger, jiggle, interrupted drag, redo, phone double tap; the phone drag now checks the exact width |
 | 6 | Ctrl+Shift+Z empties the document | Not a defect: Playwright's `Control+Shift+z` sends a lowercase `z` with Shift, which CodeMirror reads as Ctrl+Z (undo). A real keyboard sends `Z`, and redo works (now tested). The text went away because the extra undo also undid the test's own programmatic setup; an opened note starts a fresh history, so its loaded text can't be undone |
+
+## GPT-6.1 Sol — fix first (3 findings)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Esc after an undo mid-drag restores the width from before the drag, so the display disagrees with the line | Fixed: the widget records the line's width on its element (`setLineWidth`), and a drag's end always goes back to that |
+| 2 | A drag whose widget goes away (mode switch, undo removing the screenshot) leaks the Esc listener; lost capture leaves the preview stuck | Already fixed (Sonnet #3: one `AbortController`, `lostpointercapture`, idempotent end); a mode-switch test added |
+| 3 | The live preview doesn't make CodeMirror re-measure, so the drawn caret lags behind the text | Fixed: each move requests a measure, and while a drag is on the content drops its `min-height` so a short note's height change is seen (CodeMirror only re-measures lines when the content height changes) |

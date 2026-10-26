@@ -1087,6 +1087,11 @@ button {
 .cm-shot.is-resizing {
   user-select: none;
 }
+/* CodeMirror re-measures line heights when the content's height changes; at its usual min-height a
+   short note's height wouldn't, and the drawn caret would lag behind the resized image. */
+.editor .cm-content:has(.cm-shot.is-resizing) {
+  min-height: 0;
+}
 .cm-shot-size {
   position: absolute;
   top: 14px;

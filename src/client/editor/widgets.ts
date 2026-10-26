@@ -3,7 +3,7 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { analysisField, bypass, noteFacet, toggleSection } from "./fields.ts";
 import { copyToClipboard } from "./clipboard.ts";
-import { applyWidth, setImageWidth, startResize } from "./resize.ts";
+import { setImageWidth, setLineWidth, startResize } from "./resize.ts";
 
 function toggle(view: EditorView, key: string): void {
   view.dispatch({ effects: toggleSection.of(key), annotations: bypass.of(true) });
@@ -89,7 +89,7 @@ export class ImageWidget extends WidgetType {
   /** A new width keeps the same image element (no reload, no flicker). */
   updateDOM(dom: HTMLElement): boolean {
     if (dom.dataset.name !== this.name) return false;
-    applyWidth(dom, this.width);
+    setLineWidth(dom, this.width);
     return true;
   }
   toDOM(view: EditorView): HTMLElement {
@@ -123,7 +123,7 @@ export class ImageWidget extends WidgetType {
       if (e.pointerType !== "mouse" && e.target !== handle) showHandle(wrap);
     });
     wrap.append(img, handle);
-    applyWidth(wrap, this.width);
+    setLineWidth(wrap, this.width);
     return wrap;
   }
   get estimatedHeight(): number {

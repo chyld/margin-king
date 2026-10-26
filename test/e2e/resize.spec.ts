@@ -118,3 +118,62 @@ test("redo puts a resize back (Ctrl+Y and Ctrl+Shift+Z)", async ({ page }) => {
   await page.keyboard.press("Control+Shift+Z"); // A real keyboard sends a capital Z with Shift.
   await expect.poll(() => raw(page)).toBe(sized);
 });
+
+async function grab(page: Page) {
+  await page.locator(".cm-shot img").hover();
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  return { x, y };
+}
+
+test("Esc after an undo mid-drag shows what the line says (Sol resize #1)", async ({ page }) => {
+  const name = await newNoteWithShot(page, "60%");
+  await drag(page, 60);
+  const resized = await raw(page);
+  expect(resized).not.toContain("![60%]");
+  const { x, y } = await grab(page);
+  await page.mouse.move(x - 80, y, { steps: 4 });
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => raw(page)).toBe(`before\n![60%](${name})\nafter`);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(await page.locator(".cm-shot").evaluate((w) => (w as HTMLElement).style.width)).toBe("60%");
+});
+
+test("a mode switch mid-drag ends the drag cleanly (Sol resize #2)", async ({ page }) => {
+  const name = await newNoteWithShot(page);
+  const { x, y } = await grab(page);
+  await page.mouse.move(x - 80, y, { steps: 4 });
+  await page.keyboard.press("Control+e");
+  await page.mouse.up();
+  expect(await raw(page)).toBe(`before\n![](${name})\nafter`);
+  const escapes = await page.evaluate(() => {
+    let n = 0;
+    document.addEventListener("keydown", (e) => e.key === "Escape" && n++);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return n;
+  });
+  expect(escapes).toBe(1);
+});
+
+test("the drawn caret follows the text while an image is resized (Sol resize #3)", async ({ page }) => {
+  await newNoteWithShot(page);
+  await page.evaluate(() => {
+    const view = (window as any).margin.view;
+    view.focus();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+  });
+  const { x, y } = await grab(page);
+  await page.mouse.move(x - 200, y, { steps: 6 });
+  const gap = () =>
+    page.evaluate(() => {
+      const view = (window as any).margin.view;
+      const drawn = document.querySelector(".cm-cursor")!.getBoundingClientRect().top;
+      return Math.abs(drawn - view.coordsAtPos(view.state.selection.main.head).top);
+    });
+  await expect.poll(gap).toBeLessThan(3);
+  await page.mouse.up();
+});
