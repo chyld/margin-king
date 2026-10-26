@@ -1,18 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2d2850"/>
-      <stop offset="1" stop-color="#16132b"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9474ff"/>
+      <stop offset="1" stop-color="#5a3ff0"/>
     </linearGradient>
-    <linearGradient id="hl" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#8b6bff"/>
-      <stop offset=".55" stop-color="#e05bd0"/>
-      <stop offset="1" stop-color="#ff9a4d"/>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="18" fill="url(#ink)"/>
-  <rect x="1" y="1" width="62" height="62" rx="17" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2"/>
-  <path d="M21 14v36" stroke="#fff" stroke-opacity=".38" stroke-width="3" stroke-linecap="round"/>
-  <rect x="28" y="21" width="22" height="10" rx="5" fill="url(#hl)"/>
-  <rect x="28" y="36" width="15" height="5" rx="2.5" fill="#fff" fill-opacity=".9"/>
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <rect width="64" height="64" rx="18" fill="url(#sheen)"/>
+  <path d="M19 44V30.5a6.5 6.5 0 0 1 13 0V44m0-13.5a6.5 6.5 0 0 1 13 0V44" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="47.5" cy="16.5" r="4.5" fill="#ffd166"/>
 </svg>
