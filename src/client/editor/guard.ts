@@ -38,12 +38,14 @@ import {
   deleteRange,
   deleteUnit,
   enter,
+  graphemeCount,
   insertText,
+  visibleSlice,
   makeCtx,
   transpose,
   type EditResult,
 } from "./engine.ts";
-import { bypass, collapsedField, composition, ctxOf, expandSections, motion } from "./fields.ts";
+import { bypass, collapsedField, composition, ctxOf, expandSections, motion, noteFacet, type NoteInfo } from "./fields.ts";
 
 function specOf(r: EditResult, userEvent: string): TransactionSpec {
   return {
@@ -171,8 +173,8 @@ function classify(state: EditorState, tr: Transaction, raw: RawChange): EditResu
   const ctx = ctxOf(state);
   const sel = state.selection.main;
   const { fromA, toA, text } = raw;
-  // Shaped like a key at the caret.
-  if (sel.empty && !text) {
+  // Shaped like a key at the caret: at most one visible grapheme (plus hidden syntax) next to it.
+  if (sel.empty && !text && graphemeCount(visibleSlice(ctx, fromA, toA)) <= 1) {
     if (toA === sel.head && fromA < toA) {
       const r = backspace(ctx, sel.head);
       if (r) return r;
@@ -264,7 +266,8 @@ export const invariantFilter = EditorState.transactionFilter.of((tr) => {
 // ---------------------------------------------------------------------------------------------
 // Composition (§7.7): pass through while composing, repair once at the end.
 
-let snapshot: { text: string; head: number } | null = null;
+let snapshot: { text: string; head: number; note: NoteInfo } | null = null;
+let repairTimer = 0;
 
 function singleDiff(a: string, b: string): { from: number; to: number; insert: string } | null {
   if (a === b) return null;
@@ -280,6 +283,8 @@ function repair(view: EditorView): void {
   const snap = snapshot;
   snapshot = null;
   if (!snap || view.composing) return;
+  // The snapshot belongs to the state it was taken in; a newly opened note is left alone.
+  if (view.state.facet(noteFacet) !== snap.note) return;
   const current = view.state.doc.toString();
   const d = singleDiff(snap.text, current);
   if (!d) return;
@@ -298,13 +303,14 @@ function repair(view: EditorView): void {
 
 export const compositionHandlers = EditorView.domEventHandlers({
   compositionstart(_e, view) {
+    window.clearTimeout(repairTimer);
     composition.active = true;
-    snapshot = { text: view.state.doc.toString(), head: view.state.selection.main.head };
+    snapshot = { text: view.state.doc.toString(), head: view.state.selection.main.head, note: view.state.facet(noteFacet) };
     return false;
   },
   compositionend(_e, view) {
     // CodeMirror may still apply the last DOM change after this event.
-    setTimeout(() => {
+    repairTimer = window.setTimeout(() => {
       composition.active = false;
       repair(view);
     }, 30);

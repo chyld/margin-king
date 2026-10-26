@@ -382,6 +382,42 @@ export function serializeRows(rows: Row[]): Out {
   return out;
 }
 
+/**
+ * Where a style change cuts through a `[text](url)` link, the parts become separate links to the
+ * same address (they're written that way, and look and act as one). Bare URLs can't be split.
+ */
+export function splitLinksAtStyleBoundaries(row: Row): void {
+  const cs = chars(row);
+  const runs = groupRuns(cs);
+  const runOf: number[] = [];
+  runs.forEach((r, ri) => {
+    for (let i = r.start; i < r.end; i++) runOf[i] = ri;
+  });
+  const firstRun = new Map<number, number>();
+  const parts = new Map<string, LinkRef>();
+  cs.forEach((c, i) => {
+    if (c.link?.form !== "md") return;
+    const run = runOf[i];
+    if (!firstRun.has(c.link.id)) firstRun.set(c.link.id, run);
+    if (firstRun.get(c.link.id) === run) return;
+    const key = `${c.link.id}:${run}`;
+    let ref = parts.get(key);
+    if (!ref) parts.set(key, (ref = { id: freshId(), url: c.link.url, form: "md" }));
+    c.link = ref;
+  });
+}
+
+/** Map a position through sorted, non-overlapping changes (a position inside a replaced range goes to its start). */
+export function mapThrough(pos: number, changes: Change[]): number {
+  let delta = 0;
+  for (const c of changes) {
+    if (c.to <= pos) delta += c.insert.length - (c.to - c.from);
+    else if (c.from < pos) return c.from + delta;
+    else break;
+  }
+  return pos + delta;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Change sets from pieces
 

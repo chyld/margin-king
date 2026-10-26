@@ -35,6 +35,9 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+/** An error raised while holding the lock: reported after the lock is released. */
+class CliError extends Error {}
+
 /** Read a line from the terminal without echoing it. */
 function askHidden(prompt: string): Promise<string> {
   return new Promise((resolvePrompt, reject) => {
@@ -126,7 +129,7 @@ async function add(nameArg: string | undefined): Promise<void> {
   if (Object.hasOwn(before, name)) fail(`User ${name} already exists.`);
   const hashed = await hashPassword(await getPassword());
   await withUsersLock((users) => {
-    if (Object.hasOwn(users, name)) fail(`User ${name} already exists.`);
+    if (Object.hasOwn(users, name)) throw new CliError(`User ${name} already exists.`);
     users[name] = { uid: randomBytes(16).toString("hex"), ...hashed, created: new Date().toISOString() };
   });
   console.log(`Added ${name}.`);
@@ -138,7 +141,7 @@ async function passwd(nameArg: string | undefined): Promise<void> {
   const hashed = await hashPassword(await getPassword());
   await withUsersLock((users) => {
     const old = Object.hasOwn(users, name) ? users[name] : undefined;
-    if (!old) fail(`No user ${name}.`);
+    if (!old) throw new CliError(`No user ${name}.`);
     users[name] = { ...old, ...hashed };
   });
   console.log(`Changed the password of ${name}.`);
@@ -147,7 +150,7 @@ async function passwd(nameArg: string | undefined): Promise<void> {
 async function remove(nameArg: string | undefined): Promise<void> {
   const name = needName(nameArg);
   await withUsersLock((users) => {
-    if (!Object.hasOwn(users, name)) fail(`No user ${name}.`);
+    if (!Object.hasOwn(users, name)) throw new CliError(`No user ${name}.`);
     delete users[name];
   });
   console.log(`Removed ${name}. Their notes stay in ${join(dataDir, "notes", name)}.`);
@@ -251,6 +254,7 @@ async function main(): Promise<void> {
         fail(USAGE);
     }
   } catch (err) {
+    if (err instanceof CliError) fail(err.message);
     if (err instanceof UsersFileError) fail(`${err.message}\nNothing was changed.`);
     fail(`margin-user: ${(err as Error).message}`);
   }

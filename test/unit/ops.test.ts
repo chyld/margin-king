@@ -49,7 +49,7 @@ test("inline code toggles on one line, skipping link text", () => {
 
 test("code across lines wraps, and touching a block unwraps it", () => {
   assert.equal(fmt("«a\n=={b}b==»", { type: "code" }), "```\n«a\nb»\n```");
-  assert.equal(fmt("```\n«x»\n```", { type: "code" }), "‸x");
+  assert.equal(fmt("```\n«x»\n```", { type: "code" }), "«x»");
   assert.equal(fmt("«a\n```»", { type: "code" }), "refused:cant");
 });
 
@@ -89,4 +89,13 @@ test("the pinned bar applies to the word at the cursor", () => {
 
 test("formatting skips code, fence and screenshot lines", () => {
   assert.equal(fmt("«a\n![](a7p2xq9d.png)\nb»", { type: "bold" }), "=={b}«a==\n![](a7p2xq9d.png)\n=={b}b»==");
+});
+
+test("a toggle is decided once for the whole selection (code review r1)", () => {
+  assert.equal(fmt("«a\n=={b}b==»", { type: "bold" }), "=={b}«a==\n=={b}b»==");
+  assert.equal(fmt("«a\n=={lime}b==»", { type: "color", color: "lime" }), "=={lime}«a==\n=={lime}b»==");
+});
+
+test("formatting part of a link splits it into links to the same address (§13)", () => {
+  assert.equal(fmt("[d«o»cs](https://a.com)", { type: "bold" }), "[d](https://a.com)=={b}[«o»](https://a.com)==[cs](https://a.com)");
 });

@@ -281,3 +281,14 @@ describe("CLI", () => {
     await rm(dir, { recursive: true });
   });
 });
+
+describe("CLI lock (code review r1)", () => {
+  test("a failing command releases users.json.lock", async () => {
+    const r = await cli(s.dataDir, ["remove", "nobody-here"]);
+    assert.notEqual(r.code, 0);
+    assert.match(r.stderr, /No user nobody-here/);
+    const t = Date.now();
+    assert.equal((await cli(s.dataDir, ["add", "gina"], "pw1234")).code, 0);
+    assert.ok(Date.now() - t < 5000, "the next command didn't wait for a leftover lock");
+  });
+});

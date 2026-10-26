@@ -22,6 +22,7 @@ export class Actions {
   private savePromise: Promise<void> | null = null;
   private saveAgain = false;
   private tagQueues = new Map<string, Promise<unknown>>();
+  private tagRevs = new Map<string, number>();
   private searchTimer = 0;
   sessionEnded = false;
 
@@ -33,8 +34,20 @@ export class Actions {
     this.store.update((s) => ({ ...s, ...fn(s) }));
   }
 
+  /** A new navigation: older async results are dropped, and a pending note load is cancelled. */
   private nav(): number {
-    return ++this.generation;
+    this.generation++;
+    if (this.store.get().loading) {
+      this.set(() => ({ loading: false }));
+      this.restoreEditable();
+    }
+    return this.generation;
+  }
+
+  /** The open note's editability, after a cancelled or failed navigation. */
+  private restoreEditable(): void {
+    const open = this.store.get().open;
+    this.editor.setReadOnly(!open || !!open.summary.trashedAt);
   }
 
   currentGeneration(): number {
@@ -153,6 +166,8 @@ export class Actions {
     const g = this.nav();
     const { view } = this.store.get();
     const tags = !view.trash && view.tag ? [view.tag] : [];
+    // Nothing typed into the old note while the new one is created can be lost.
+    this.editor.setReadOnly(true);
     try {
       const note = await api<NoteSummary>("POST", "/api/notes", { tags });
       if (g !== this.generation) return;
@@ -161,6 +176,7 @@ export class Actions {
       this.editor.focus();
       void this.refresh();
     } catch (err) {
+      if (g === this.generation) this.restoreEditable();
       this.fail(err);
     }
   }
@@ -240,6 +256,8 @@ export class Actions {
     const open = this.store.get().open;
     if (!open || open.summary.trashedAt) return;
     const id = open.summary.id;
+    const rev = (this.tagRevs.get(id) ?? 0) + 1;
+    this.tagRevs.set(id, rev);
     this.set((s) => ({ open: s.open && { ...s.open, summary: { ...s.open.summary, tags } } }));
     const prev = this.tagQueues.get(id) ?? Promise.resolve();
     const next = prev
@@ -248,8 +266,10 @@ export class Actions {
         try {
           const summary = await api<NoteSummary>("PUT", `/api/notes/${id}/tags`, { tags });
           const now = this.store.get().open;
-          // Applied only if that note is still the open one.
-          if (now?.summary.id === id) this.set(() => ({ open: { ...now, summary: { ...now.summary, tags: summary.tags } } }));
+          // Applied only if that note is still open and no newer tag change was made since.
+          if (now?.summary.id === id && this.tagRevs.get(id) === rev) {
+            this.set(() => ({ open: { ...now, summary: { ...now.summary, tags: summary.tags } } }));
+          }
           void this.refresh();
         } catch (err) {
           this.fail(err);
@@ -277,10 +297,12 @@ export class Actions {
     const message = `Move "${title}" to the trash?${this.dirty() ? "\nYour unsaved changes will be lost." : ""}`;
     if (!window.confirm(message)) return;
     await this.drainTags();
-    this.nav();
+    const g = this.nav();
+    const id = open.summary.id;
     try {
-      await api("POST", `/api/notes/${open.summary.id}/trash`);
-      this.close();
+      await api("POST", `/api/notes/${id}/trash`);
+      // A later navigation wins: only close the note if it's still the one being shown.
+      if (g === this.generation && this.store.get().open?.summary.id === id) this.close();
       toast("Moved to trash");
       void this.refresh();
     } catch (err) {
@@ -310,10 +332,11 @@ export class Actions {
     if (!open?.summary.trashedAt) return;
     const title = open.summary.title || "Untitled";
     if (!window.confirm(`Delete "${title}" forever? This can't be undone.`)) return;
-    this.nav();
+    const g = this.nav();
+    const id = open.summary.id;
     try {
-      await api("DELETE", `/api/notes/${open.summary.id}`);
-      this.close();
+      await api("DELETE", `/api/notes/${id}`);
+      if (g === this.generation && this.store.get().open?.summary.id === id) this.close();
       void this.refresh();
     } catch (err) {
       this.fail(err);
@@ -321,7 +344,14 @@ export class Actions {
   }
 
   async emptyTrash(): Promise<void> {
-    const count = this.store.get().notes.length;
+    // Count the whole trash, not the (possibly searched) list: Empty trash deletes all of it.
+    let count: number;
+    try {
+      count = (await api<NoteSummary[]>("GET", "/api/notes?trash=1")).length;
+    } catch (err) {
+      this.fail(err);
+      return;
+    }
     if (!count) return;
     if (!window.confirm(`Empty the trash? ${count} note${count === 1 ? "" : "s"} will be deleted forever.`)) return;
     this.nav();

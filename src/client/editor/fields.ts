@@ -31,6 +31,8 @@ export const collapsedField = StateField.define<ReadonlySet<string>>({
       fn(copy);
       next = copy;
     };
+    // Expansions name sections by their text before this transaction's edits: apply them first.
+    for (const e of tr.effects) if (e.is(expandSections)) edit((s) => e.value.forEach((k) => s.delete(k)));
     if (tr.docChanged && next.size) {
       const old = tr.startState.field(analysisField);
       const renames: [string, string][] = [];
@@ -56,7 +58,6 @@ export const collapsedField = StateField.define<ReadonlySet<string>>({
     for (const e of tr.effects) {
       if (e.is(setCollapsed)) next = new Set(e.value);
       else if (e.is(toggleSection)) edit((s) => (s.has(e.value) ? s.delete(e.value) : s.add(e.value)));
-      else if (e.is(expandSections)) edit((s) => e.value.forEach((k) => s.delete(k)));
     }
     return next;
   },

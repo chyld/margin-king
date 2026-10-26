@@ -9,9 +9,11 @@ import {
   charsOfLine,
   freshId,
   piecesToChanges,
+  mapThrough,
   sameVisible,
   serializeRows,
   setStyle3,
+  splitLinksAtStyleBoundaries,
   type Change,
   type Row,
   type VChar,
@@ -207,7 +209,7 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
   if (op.type === "section") return section(ctx, from, to);
   if (op.type === "code") {
     const lines = linesIn(ctx, from, Math.max(from, to));
-    if (lines.some(isBlockLine)) return unwrapBlocks(ctx, lines);
+    if (lines.some(isBlockLine)) return unwrapBlocks(ctx, lines, from, to);
     if (lines.length > 1) return wrapBlock(ctx, lines);
   }
   const target = resolveTarget(ctx, from, to, pinned);
@@ -229,6 +231,11 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
     }
   }
 
+  // Toggles are decided once for the whole selection, before any line changes.
+  const boldOn = !all.every((c) => c.style.b);
+  const underlineOn = !all.every((c) => c.style.u);
+  const removeColor = op.type === "color" && all.every((c) => c.style.color === op.color);
+  const allCode = all.filter((c) => !c.link).every((c) => c.style.code);
   p.lines.forEach((line, i) => {
     const row = p.rows[i];
     const targets = p.targets[i];
@@ -236,13 +243,11 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
     const heading = line.kind === "heading";
     switch (op.type) {
       case "bold": {
-        const on = !all.every((c) => c.style.b);
-        for (const c of targets) setStyle3(c, { color: c.style.color, b: on, u: c.style.u });
+        for (const c of targets) setStyle3(c, { color: c.style.color, b: boldOn, u: c.style.u });
         break;
       }
       case "underline": {
-        const on = !all.every((c) => c.style.u);
-        for (const c of targets) setStyle3(c, { color: c.style.color, b: c.style.b, u: on });
+        for (const c of targets) setStyle3(c, { color: c.style.color, b: c.style.b, u: underlineOn });
         break;
       }
       case "color": {
@@ -255,8 +260,7 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
           for (const c of chars(row)) setStyle3(c, { color: null, b: c.style.b, u: c.style.u });
           return;
         }
-        const remove = all.every((c) => c.style.color === op.color);
-        for (const c of targets) setStyle3(c, { color: remove ? null : op.color, b: c.style.b, u: c.style.u });
+        for (const c of targets) setStyle3(c, { color: removeColor ? null : op.color, b: c.style.b, u: c.style.u });
         break;
       }
       case "removeColor":
@@ -271,7 +275,6 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
         break;
       case "code": {
         const nonLink = targets.filter((c) => !c.link);
-        const allCode = all.filter((c) => !c.link).every((c) => c.style.code);
         const id = freshId();
         for (const c of nonLink) {
           c.style = { ...c.style, code: !allCode };
@@ -303,6 +306,7 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
     }
   });
 
+  for (const row of p.rows) if (row) splitLinksAtStyleBoundaries(row);
   markSelection(p);
   const region = regionOf(ctx, p);
   const result = finish(ctx, p, region.rows, region.from, region.to, target.word);
@@ -338,7 +342,7 @@ function section(ctx: FormatCtx, from: number, to: number): FormatResult {
   return { ok: true, changes, anchor: shift(from), head: shift(to) };
 }
 
-function unwrapBlocks(ctx: FormatCtx, lines: Line[]): FormatResult {
+function unwrapBlocks(ctx: FormatCtx, lines: Line[], from: number, to: number): FormatResult {
   const doc = ctx.a.doc;
   const blockIds = [...new Set(lines.filter(isBlockLine).map((l) => l.block!))];
   const removed = new Set<number>();
@@ -364,8 +368,8 @@ function unwrapBlocks(ctx: FormatCtx, lines: Line[]): FormatResult {
     if (inside.has(i)) continue;
     if (after.doc.lines[map[i]]?.kind !== doc.lines[i].kind) return { ok: false, reason: "cant" };
   }
-  const first = doc.lines[doc.blocks[blockIds[0]].open];
-  return { ok: true, changes, anchor: first.from, head: first.from };
+  // The same visible text stays selected (README §3.6).
+  return { ok: true, changes, anchor: mapThrough(from, changes), head: mapThrough(to, changes) };
 }
 
 function wrapBlock(ctx: FormatCtx, lines: Line[]): FormatResult {

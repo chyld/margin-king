@@ -661,6 +661,29 @@ export function deleteRange(ctx: Ctx, from: number, to: number): EditResult {
   return editRange(ctx, from, to, [], { caretOrigin: from });
 }
 
+/** The visible text in [from, to): what render mode shows of that range. */
+export function visibleSlice(ctx: Ctx, from: number, to: number): string {
+  const L1 = lineAt(ctx.a, from);
+  const L2 = lineAt(ctx.a, to);
+  let out = "";
+  for (let i = L1.index; i <= L2.index; i++) {
+    const line = ctx.a.doc.lines[i];
+    if (i > L1.index && from <= line.from - 1 && to > line.from - 1) out += "\n";
+    if (line.kind === "text" || line.kind === "heading") {
+      for (const c of chars(rowOf(ctx, i))) if (c.raw >= from && c.raw < to) out += c.ch;
+    } else if (line.kind !== "image") {
+      out += ctx.text.slice(Math.max(from, line.from), Math.min(to, line.to));
+    }
+  }
+  return out;
+}
+
+export function graphemeCount(s: string): number {
+  let n = 0;
+  for (const _ of segmenter.segment(s)) n++;
+  return n;
+}
+
 /** What render mode copies (§7.9): partial lines as balanced syntax, whole lines raw. */
 export function copyText(ctx: Ctx, from: number, to: number): string {
   const L1 = lineAt(ctx.a, from);
