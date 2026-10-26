@@ -1184,7 +1184,7 @@ favicon and logo icon (README §4.6) are redrawn: a white lowercase "m" on a smo
 square with a soft top sheen, and a small amber dot (`public/favicon.svg`, used by every page). The
 palette button's icon is a line-drawn highlighter over a coral → amber → mint → violet stroke,
 instead of a palette with four paint dots (README §4.6). The end-of-file marker keeps README §3.12's
-shape, but its three dots are violet, magenta and orange (the brand gradient), and it's laid out so
+shape, but its three dots are the logo's violet (`#7c5cff`), and it's laid out so
 only the lines stretch: the end diamonds stay square at any width.
 
 **Resizing screenshots** (owner request, 2026-10-26; built, then code-reviewed by beta). The PNG never

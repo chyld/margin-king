@@ -206,7 +206,7 @@ export class CopyWidget extends WidgetType {
 
 /**
  * README §3.12: a thin line with a diamond at each end, broken by three dots in a triangle (in the
- * brand colors, the owner's choice). Laid out with flexbox so only the lines stretch.
+ * logo's violet, the owner's choice). Laid out with flexbox so only the lines stretch.
  */
 export class EofWidget extends WidgetType {
   eq(): boolean {

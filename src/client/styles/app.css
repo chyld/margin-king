@@ -1143,21 +1143,19 @@ button {
   width: 5px;
   height: 5px;
   border-radius: 50%;
+  background: var(--violet);
 }
 .cm-eof-dots i:nth-child(1) {
   left: 6px;
   top: 1px;
-  background: #7c5cff;
 }
 .cm-eof-dots i:nth-child(2) {
   left: 1px;
   top: 9px;
-  background: #e05bd0;
 }
 .cm-eof-dots i:nth-child(3) {
   left: 11px;
   top: 9px;
-  background: #ff9a4d;
 }
 
 /* ---- Formatting popup (README §3.6) ---- */
