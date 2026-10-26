@@ -224,6 +224,7 @@ All bodies and responses are JSON. `Summary` = `{ id, title, created, modified, 
 | `GET /api/tags` | | `[{ tag, count }]` over non-trashed notes, alphabetical |
 | `POST /api/notes` | `{ tags? }` | 201 `Summary`; 400 unless every tag is `^[a-z0-9]{1,40}$` (the same check as the tags route) |
 | `GET /api/notes/:id` | | `Summary & { text }` |
+| `GET /api/notes/:id/meta` | | `{ path, text }`: the note's `meta.json` exactly as stored, for the read-only viewer (§15) |
 | `PUT /api/notes/:id` | `{ text }` ≤ 50 MB | `Summary` (sets `modified`); 409 if trashed |
 | `PUT /api/notes/:id/tags` | `{ tags }` | `Summary` (doesn't touch `modified`); 400 unless every tag is `^[a-z0-9]{1,40}$`; de-duplicated, order kept |
 | `POST /api/notes/:id/trash` | | `Summary` with `trashedAt` |
@@ -1210,4 +1211,13 @@ changes; only how wide it's shown.
   clicking the handle (double-tapping it on a touch screen) writes `![](name.png)`. The widget keeps
   the same `<img>` when only the width changes (`updateDOM`), so nothing reloads or flickers.
   Read-only notes have no handle.
+
+**Viewing meta.json** (owner request, 2026-10-26; built and tested, no review round by the owner's
+choice). A `{ }` tile beside the trash button, shown whenever a note is open (trashed notes too, since
+it changes nothing), opens a modal `<dialog>` with the note's `meta.json` exactly as stored on disk,
+fetched from `GET /api/notes/:id/meta` (so a hand-edited value the app ignores still shows), with its
+path under the data folder (`notes/<user>/<id>/meta.json`). It's read-only. Esc, the × button or a
+click outside closes it, and the editor gets the focus back. Since `meta.json` only changes on a
+save, the panel says so when the note has unsaved changes. A response for a note that's no longer
+open is dropped.
 

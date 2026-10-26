@@ -161,3 +161,45 @@ test("home from the logo clears the note and the address", async ({ page }) => {
   await expect(page.locator(".empty-state")).toBeVisible();
   expect(new URL(page.url()).search).toBe("");
 });
+
+test("the { } button shows the note's meta.json, read-only (owner decision)", async ({ page }) => {
+  await login(page);
+  await expect(page.locator(".meta-note")).toBeHidden();
+  const id = await newNoteWith(page, "Meta please");
+  await page.click(".tag-box");
+  await page.keyboard.type("alpha");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".tag-chips .chip")).toHaveCount(1);
+  await page.evaluate(() => (window as any).margin.view.focus());
+  await page.click(".meta-note");
+  const dialog = page.locator(".meta-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(".meta-path")).toHaveText(new RegExp(`^notes/alice/${id}/meta\\.json$`));
+  const file = await page.evaluate(async (noteId) => (await (await fetch(`/api/notes/${noteId}/meta`)).json()).text, id);
+  await expect(dialog.locator(".meta-json")).toHaveText(file.replace(/\n$/, ""));
+  expect(JSON.parse(file).tags).toEqual(["alpha"]);
+  await expect(dialog.locator(".meta-note")).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  expect(await page.evaluate(() => (window as any).margin.view.hasFocus)).toBe(true);
+  // Unsaved text isn't in the file yet, and the panel says so; a click outside closes it.
+  await page.keyboard.type(" more");
+  await page.click(".meta-note");
+  await expect(dialog.locator(".meta-note")).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(dialog).toBeHidden();
+});
+
+test("a trashed note's meta.json can be viewed too", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "Trash and look");
+  page.on("dialog", (d) => void d.accept());
+  await page.click(".trash-note");
+  await page.click(".trash-toggle");
+  await page.locator(".card", { hasText: "Trash and look" }).click();
+  await expect(page.locator(".trash-banner")).toBeVisible();
+  await page.click(".meta-note");
+  await expect(page.locator(".meta-json")).toContainText('"trashedAt": "');
+  await page.locator(".meta-close").click();
+  await expect(page.locator(".meta-dialog")).toBeHidden();
+});

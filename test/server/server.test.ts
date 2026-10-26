@@ -254,6 +254,27 @@ describe("notes", () => {
     await fs.rm(invalid, { recursive: true });
   });
 
+  test("meta.json can be read exactly as stored, by its owner only (owner decision)", async () => {
+    const c = new Client(s.base);
+    await c.login("alice", "secret");
+    const n = (await c.json("POST", "/api/notes", { tags: ["alpha"] })).body;
+    const file = join(s.dataDir, "notes", "alice", n.id, "meta.json");
+    const fs = await import("node:fs/promises");
+    assert.deepEqual(await c.json("GET", `/api/notes/${n.id}/meta`), {
+      status: 200,
+      body: { path: `notes/alice/${n.id}/meta.json`, text: await fs.readFile(file, "utf8") },
+    });
+    // Hand-edited: the bad tag is ignored by the app but shown here, byte for byte.
+    const edited = JSON.stringify({ ...JSON.parse(await fs.readFile(file, "utf8")), tags: ["alpha", "Not A Tag"] });
+    await fs.writeFile(file, edited);
+    assert.equal((await c.json("GET", `/api/notes/${n.id}/meta`)).body.text, edited);
+    assert.equal((await c.json("GET", "/api/notes/zzzzzzzz/meta")).status, 404);
+    const b = new Client(s.base);
+    await b.login("bob", "hunter2");
+    assert.equal((await b.json("GET", `/api/notes/${n.id}/meta`)).status, 404);
+    assert.equal((await new Client(s.base).json("GET", `/api/notes/${n.id}/meta`)).status, 401);
+  });
+
   test("an upload into a note deleted meanwhile is a 404", async () => {
     const c = new Client(s.base);
     await c.login("alice", "secret");

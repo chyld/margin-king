@@ -4,6 +4,7 @@ import { api, ApiError } from "./api.ts";
 import type { Editor } from "./editor/editor.ts";
 import { prefs } from "./prefs.ts";
 import type { AppState, NoteSummary, Store, TagCount } from "./state.ts";
+import { showMeta } from "./ui/meta.ts";
 import { toast } from "./ui/toast.ts";
 
 interface NoteResponse extends NoteSummary {
@@ -317,6 +318,22 @@ export class Actions {
   /** Before leaving a note, its tag changes reach the server. */
   async drainTags(): Promise<void> {
     await Promise.allSettled([...this.tagQueues.values()]);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // meta.json viewer (owner decision, architecture §15)
+
+  async showMeta(): Promise<void> {
+    const id = this.store.get().open?.summary.id;
+    if (!id) return;
+    try {
+      const meta = await api<{ path: string; text: string }>("GET", `/api/notes/${id}/meta`);
+      // Only for the note still shown.
+      if (this.store.get().open?.summary.id !== id) return;
+      showMeta(meta, this.dirty(), () => this.editor.focus());
+    } catch (err) {
+      this.fail(err);
+    }
   }
 
   // -------------------------------------------------------------------------------------------

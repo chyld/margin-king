@@ -1158,6 +1158,77 @@ button {
   top: 9px;
 }
 
+/* ---- meta.json viewer (owner decision, architecture §15) ---- */
+.meta-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(72vh, 640px);
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+}
+.meta-dialog::backdrop {
+  background: rgb(31 27 46 / 0.35);
+}
+.meta-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: inherit;
+  padding: 18px 20px 20px;
+  box-sizing: border-box;
+}
+.meta-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.meta-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.meta-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.meta-path {
+  font: 12px/1.4 var(--mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.meta-json {
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 1px var(--code-border);
+  font: 13px/1.6 var(--mono);
+  color: var(--ink);
+  white-space: pre;
+}
+.meta-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  /* A full timestamp line fits a phone's width. */
+  .meta-body {
+    padding: 16px;
+  }
+  .meta-json {
+    padding: 12px;
+    font-size: 11.5px;
+  }
+}
+
 /* ---- Formatting popup (README §3.6) ---- */
 .fmt-popup {
   position: fixed;

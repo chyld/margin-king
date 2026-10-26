@@ -143,6 +143,16 @@ export function apiRoutes(d: Deps): Route[] {
     ],
     ["GET", "/api/notes/:id", "user", async (c) => json(c.res, 200, await d.store.get(user(c), noteId(c)))],
     [
+      "GET",
+      "/api/notes/:id/meta",
+      "user",
+      async (c) => {
+        const id = noteId(c);
+        const text = await d.store.metaFile(user(c), id);
+        json(c.res, 200, { path: `notes/${user(c)}/${id}/meta.json`, text });
+      },
+    ],
+    [
       "PUT",
       "/api/notes/:id",
       "user",

@@ -10,7 +10,8 @@ port 5555.
   this build follows; its §5 describes an earlier build). Changes and additions the owner made since
   are listed in [architecture §15](docs/architecture.md#15-features-beyond-the-readme-owner-decisions),
   among them **resizing screenshots**: drag the handle on a screenshot's right edge (or tap the image
-  first on a touch screen); double-click (double-tap) the handle for the original size.
+  first on a touch screen); double-click (double-tap) the handle for the original size. The `{ }`
+  button beside the trash button shows the note's `meta.json` (read-only).
 - How this build works: [`docs/architecture.md`](docs/architecture.md), with the review history in
   [`docs/reviews/`](docs/reviews/).
 

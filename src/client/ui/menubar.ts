@@ -36,6 +36,7 @@ export function mountMenubar(store: Store, actions: Actions): void {
   const font = $<HTMLButtonElement>(".font-switch", bar);
   const palette = $<HTMLButtonElement>(".palette", bar);
   const trash = $<HTMLButtonElement>(".trash-note", bar);
+  const meta = $<HTMLButtonElement>(".meta-note", bar);
   const tagsHost = $(".tags", bar);
   const chips = $(".tag-chips", bar);
   const box = $<HTMLInputElement>(".tag-box", bar);
@@ -50,6 +51,7 @@ export function mountMenubar(store: Store, actions: Actions): void {
   palette.addEventListener("mousedown", (e) => e.preventDefault());
   palette.addEventListener("click", () => actions.toggleFormatBar());
   trash.addEventListener("click", () => void actions.trashNote());
+  meta.addEventListener("click", () => void actions.showMeta());
   $(".show-sidebar", bar).addEventListener("click", () => actions.toggleSidebar());
   $(".menu", bar).addEventListener("click", () => actions.setDrawer(true));
 
@@ -147,6 +149,8 @@ export function mountMenubar(store: Store, actions: Actions): void {
     save.hidden = !editable;
     palette.hidden = !editable;
     trash.hidden = !editable;
+    // Read-only, so trashed notes have it too.
+    meta.hidden = !open_;
     tagsHost.hidden = !editable;
     save.dataset.state = s.save;
     save.title = SAVE_TITLES[s.save];

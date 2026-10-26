@@ -158,6 +158,17 @@ export class NoteStore {
     return !!(await this.readNote(user, id));
   }
 
+  /** The note's meta.json exactly as stored, for the read-only viewer (owner decision, §15). */
+  async metaFile(user: string, id: string): Promise<string> {
+    if (!(await this.exists(user, id))) throw notFound();
+    try {
+      return await readFile(join(this.noteDir(user, id), "meta.json"), "utf8");
+    } catch (err) {
+      if (isNotFound(err)) throw notFound();
+      throw err;
+    }
+  }
+
   private async ids(user: string): Promise<string[]> {
     try {
       return (await readdir(this.userDir(user))).filter(isNoteId);
