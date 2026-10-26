@@ -816,9 +816,14 @@ button {
   /* Just enough that the text and caret don't touch the window edge. */
   padding: 12px;
   overflow: auto;
+  /* It still scrolls (wheel, touch, keys), but no scroll bar shows (owner decision). */
+  scrollbar-width: none;
   /* Raw syntax like == must show as typed, not as a ligature. */
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "calt" 0;
+}
+.editor .cm-scroller::-webkit-scrollbar {
+  display: none;
 }
 .editor .cm-content {
   padding: 0;

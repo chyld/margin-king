@@ -203,3 +203,15 @@ test("a trashed note's meta.json can be viewed too", async ({ page }) => {
   await page.locator(".meta-close").click();
   await expect(page.locator(".meta-dialog")).toBeHidden();
 });
+
+test("the editor scrolls without showing a scroll bar (owner decision)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, Array.from({ length: 120 }, (_, i) => `line ${i + 1}`).join("\n"));
+  const scroller = page.locator(".editor .cm-scroller");
+  const box = (await scroller.boundingBox())!;
+  // Headless Chromium hides scroll bars anyway, so check the style that hides it everywhere.
+  expect(await scroller.evaluate((el) => [getComputedStyle(el).scrollbarWidth, el.scrollHeight > el.clientHeight])).toEqual(["none", true]);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+});
