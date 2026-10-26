@@ -51,3 +51,19 @@ commit per review, each with tests that fail without it.
 Sonnet also noted that in the browser tests, Ctrl+Shift+Z right after Ctrl+Z empties the note. That
 is Playwright sending a lowercase `z` with Shift, which CodeMirror reads as a second undo (code
 review resize-r1, Sonnet #6), not a font problem.
+
+## MiniMax M3.1 Flash — 11 findings
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Unbounded decompression (a 200 KB WOFF reached 403 MB) | Already fixed (Sol #1) |
+| 2 | A symlinked `monospace/` or `other/` folder is followed | Already fixed (Sol #2) |
+| 3 | With the list opened by mouse, Enter replaces the selected text with a line break | Fixed: Enter moves the ring into the list, onto the checked entry |
+| 4 | The ring is an index into the visible buttons, so the Font button appearing moves it (Remove color → Font) | Fixed: the ring remembers the option itself |
+| 5 | A missing font mixed with plain text hides the Font button | Already fixed (Sol #4) |
+| 6 | A selection ending at the next line's start loses its block | Already fixed (Sol #3) |
+| 7 | Mac Roman names decoded as Latin-1 | Already fixed (Sol #5) |
+| 8 | Windows symbol name records (3/0) rank with 3/1 and 3/10, against the spec | Fixed: ranked last; the ranking is tested |
+| 9 | `formatState` builds the target's rows twice | Already fixed (Sonnet #3) |
+| 10 | The "loaded" check is true for a family with no faces | Already fixed (Sol #6) |
+| 11 | No tests of a font on a heading, of Section keeping a font, or of typing inside a font run | Added the first two; typing inside a run was already tested (`=={lime+font-inter}wo‸rd==`) |

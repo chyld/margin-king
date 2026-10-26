@@ -205,3 +205,10 @@ test("fonts: formatState lists every font stored in the target, for the Font but
   const { text, from, to } = sel("«plain =={font-a}x==\n```font-gone\ny»\n```");
   assert.deepEqual(formatState(formatCtx(text), from, to, false).fonts, ["a", "gone"]);
 });
+
+test("fonts: on a heading's text, and Section keeps a font (MiniMax code r1 #11)", () => {
+  assert.equal(fmt("## {red} «Title»", other("inter")), "## {red} =={font-inter}«Title»==");
+  assert.equal(fmt("## {red} =={font-inter}«Title»==", other(null)), "## {red} «Title»");
+  assert.equal(fmt("=={font-inter}«T»==", { type: "section" }), "## {blue-deep} =={font-inter}«T»==");
+  assert.equal(fmt("## {red} =={font-inter}«T»==", { type: "section" }), "=={font-inter}«T»==");
+});

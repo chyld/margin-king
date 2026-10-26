@@ -218,3 +218,38 @@ test("the pinned bar sets the font of the code block the cursor is in (Sonnet co
   await page.locator(".fmt-font-item", { hasText: "Fira Code" }).click();
   expect(await raw(page)).toBe("intro\n```font-fira-code\ncode here\n```");
 });
+
+test("with the list opened by mouse, Enter moves the ring into it instead of editing the note (MiniMax code r1 #3)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await page.locator(".fmt-popup .fmt-font").click();
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("x word y");
+  await expect(page.locator(".fmt-font-item", { hasText: "Default" })).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("x =={font-fira-code}word== y");
+});
+
+test("the ring stays on its option when the Font button appears beside it (MiniMax code r1 #4)", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route("**/api/fonts", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await login(page);
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await expect(page.locator(".fmt-popup .fmt-font")).toBeHidden();
+  await page.keyboard.press("ArrowDown"); // B
+  await page.keyboard.press("ArrowDown"); // Link
+  await page.keyboard.press("ArrowRight"); // Remove color (Font isn't there yet)
+  await expect(page.locator(".fmt-popup .fmt-nocolor")).toHaveClass(/is-focus/);
+  release();
+  await expect(page.locator(".fmt-popup .fmt-font")).toBeVisible();
+  await expect(page.locator(".fmt-popup .fmt-nocolor")).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator(".fmt-popup .fmt-font")).toHaveClass(/is-focus/);
+});

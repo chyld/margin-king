@@ -22,25 +22,29 @@ export interface FakeFont {
   padName?: number;
   /** The `name` table's length as the file declares it, if not its real length. */
   declareName?: number;
+  /** Extra `name` records: [platform, encoding, language, id, text]. */
+  names?: [number, number, number, number, string][];
 }
 
 function nameTable(f: FakeFont): Buffer {
-  const names: [number, string][] = [
-    [1, f.family],
-    [2, f.style ?? "Regular"],
+  const [platform, encoding, language] = f.mac ? [1, 0, 0] : [3, 1, 0x409];
+  const names: [number, number, number, number, string][] = [
+    [platform, encoding, language, 1, f.family],
+    [platform, encoding, language, 2, f.style ?? "Regular"],
   ];
-  if (f.typoFamily) names.push([16, f.typoFamily]);
-  const strings = names.map(([, s]) => (f.mac ? Buffer.from(s, "latin1") : Buffer.from(s, "utf16le").swap16()));
+  if (f.typoFamily) names.push([platform, encoding, language, 16, f.typoFamily]);
+  names.push(...(f.names ?? []));
+  const strings = names.map(([p, , , , s]) => (p === 1 ? Buffer.from(s, "latin1") : Buffer.from(s, "utf16le").swap16()));
   const head = Buffer.alloc(6 + names.length * 12);
   head.writeUInt16BE(0, 0);
   head.writeUInt16BE(names.length, 2);
   head.writeUInt16BE(head.length, 4);
   let offset = 0;
-  names.forEach(([id], i) => {
+  names.forEach(([p, e, l, id], i) => {
     const at = 6 + i * 12;
-    head.writeUInt16BE(f.mac ? 1 : 3, at);
-    head.writeUInt16BE(f.mac ? 0 : 1, at + 2);
-    head.writeUInt16BE(f.mac ? 0 : 0x409, at + 4);
+    head.writeUInt16BE(p, at);
+    head.writeUInt16BE(e, at + 2);
+    head.writeUInt16BE(l, at + 4);
     head.writeUInt16BE(id, at + 6);
     head.writeUInt16BE(strings[i].length, at + 8);
     head.writeUInt16BE(offset, at + 10);

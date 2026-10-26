@@ -62,6 +62,14 @@ describe("reading a font file's metadata", () => {
     assert.deepEqual(readFaceInfo(woff2({ family: "A", wght: [300, 700] })).range, [300, 700]);
     assert.equal(readFaceInfo(sfnt({ family: "A", fixedPitch: true })).fixedPitch, true);
     assert.equal(readFaceInfo(sfnt({ family: "Mac Name", mac: true })).family, "Mac Name");
+    // Name records: Windows English first, then other Windows Unicode, Mac Roman, Unicode, and
+    // Windows symbol last (MiniMax code r1 #8).
+    const ranked = (names: [number, number, number, number, string][]) => readFaceInfo(sfnt({ family: "", names, mac: true })).family;
+    assert.equal(ranked([[3, 0, 0x409, 1, "Symbol"], [1, 0, 0, 1, "Mac"]]), "Mac");
+    assert.equal(ranked([[3, 0, 0x409, 1, "Symbol"], [0, 3, 0, 1, "Unicode"]]), "Unicode");
+    assert.equal(ranked([[3, 0, 0x409, 1, "Symbol"]]), "Symbol");
+    assert.equal(ranked([[1, 0, 0, 1, "Mac"], [3, 1, 0x40c, 1, "Windows"], [3, 1, 0x409, 1, "English"]]), "English");
+    assert.equal(ranked([[1, 0, 0, 1, "Mac"], [3, 1, 0x40c, 1, "Windows"]]), "Windows");
     // Mac Roman isn't Latin-1: 0x8E is é (Sol code r1 #5).
     assert.equal(readFaceInfo(sfnt({ family: "Caf\u008e Cr\u008fme", mac: true })).family, "Café Crème");
     assert.equal(readFaceInfo(sfnt({ family: "A", weight: 7 })).weight, 700);

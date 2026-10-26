@@ -1283,7 +1283,8 @@ picked code fonts show their ligatures; a word in another font with no color get
   API, so its control characters and line breaks become spaces and it's cut to 100 characters. From
   the tables:
   - **family**: `name` ID 16 (typographic family) if present, else ID 1, preferring Windows
-    English (3/1/0x409, then any 3/1 or 3/10), then Mac Roman (1/0), then Unicode (0/*);
+    English (3/1/0x409, then any 3/1 or 3/10), then Mac Roman (1/0), then Unicode (0/*), then
+    Windows symbol (3/0);
   - **weight**: `OS/2` `usWeightClass`;
   - **italic**: `OS/2` `fsSelection` bit 0 or bit 9, or `head.macStyle` bit 1;
   - **weight range**: the `wght` axis of `fvar`, if there is one (a variable font);
@@ -1438,8 +1439,11 @@ picked code fonts show their ligatures; a word in another font with no color get
     `click` and a swipe scrolls the list without one.
   - **Keyboard**: the Font button is in the ring's second row. Enter on it opens the list with the
     ring on the checked entry (or Default); Up and Down move through the entries (headings are
-    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button. With the
-    bar pinned and nothing selected, keys go to the note as before (§7.8).
+    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button. If the
+    list was opened with the mouse, Enter moves the ring into it (onto the checked entry) rather
+    than editing the note. The ring remembers its option, not a position, so the Font button
+    appearing when the list arrives doesn't move it. With the bar pinned and nothing selected, keys
+    go to the note as before (§7.8).
   - Works in both modes (README §3.6): in raw mode picking a font writes the marker, which shows as
     text.
 - **Changes to README behavior** (owner-approved with this feature): the popup's second row (§3.6);

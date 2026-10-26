@@ -180,7 +180,7 @@ function nameOf(table: Buffer | undefined, id: number): string | null {
   if (!table || table.length < 6) return null;
   const count = table.readUInt16BE(2);
   const strings = table.readUInt16BE(4);
-  // Windows English, then any Windows Unicode, then Mac Roman, then Unicode.
+  // Windows English, then any Windows Unicode, then Mac Roman, then Unicode, then Windows symbol.
   let best: { rank: number; text: string } | null = null;
   for (let i = 0; i < count; i++) {
     const at = 6 + i * 12;
@@ -195,8 +195,11 @@ function nameOf(table: Buffer | undefined, id: number): string | null {
     const bytes = table.subarray(offset, offset + length);
     let rank: number;
     let text: string;
-    if (platform === 3 && [0, 1, 10].includes(encoding)) {
-      rank = encoding !== 0 && language === 0x409 ? 0 : 1;
+    if (platform === 3 && (encoding === 1 || encoding === 10)) {
+      rank = language === 0x409 ? 0 : 1;
+      text = utf16be(bytes);
+    } else if (platform === 3 && encoding === 0) {
+      rank = 4;
       text = utf16be(bytes);
     } else if (platform === 1 && encoding === 0) {
       rank = 2;

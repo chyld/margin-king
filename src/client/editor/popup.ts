@@ -47,7 +47,8 @@ class Popup {
   pinned = false;
   mouseDown = false;
   escKey = "";
-  focus: [number, number] | null = null;
+  /** The option the ring is on: the cell itself, so a button appearing or hiding doesn't move it. */
+  focus: Cell | null = null;
   message = "";
   visible = false;
   state: FormatState | null = null;
@@ -173,10 +174,8 @@ class Popup {
     return rows.map((r) => r.filter((c) => !c.el.hidden)).filter((r) => r.length);
   }
 
-  private fontCellFocus(): [number, number] | null {
-    const rows = this.ringRows();
-    const c = rows[1]?.indexOf(this.fontCell) ?? -1;
-    return c >= 0 ? [1, c] : null;
+  private fontCellFocus(): Cell | null {
+    return this.fontCell.el.hidden ? null : this.fontCell;
   }
 
   private setList(open: boolean, keyboard = false): void {
@@ -335,8 +334,8 @@ class Popup {
     });
     this.rows.flat().forEach((c) => c.el.classList.remove("is-focus"));
     const ring = this.ringRows();
-    if (this.focus && !ring[this.focus[0]]?.[this.focus[1]]) this.focus = null;
-    if (this.focus) ring[this.focus[0]][this.focus[1]].el.classList.add("is-focus");
+    if (this.focus && !ring.some((r) => r.includes(this.focus!))) this.focus = null;
+    this.focus?.el.classList.add("is-focus");
     this.listItems.forEach((it, i) => it.el.classList.toggle("is-focus", i === this.listFocus));
     const compact = window.matchMedia("(max-width: 760px)").matches;
     this.dom.classList.toggle("is-compact", compact);
@@ -500,14 +499,23 @@ class Popup {
     }
     const rows = this.ringRows();
     if (name === "Enter") {
+      if (this.listOpen && !this.focus) {
+        // The list was opened with the mouse: Enter moves the ring into it instead of editing the note.
+        this.listFocus = this.checkedItem();
+        this.paint();
+        this.listItems[this.listFocus]?.el.scrollIntoView({ block: "nearest" });
+        return true;
+      }
       if (!this.focus) return false;
-      this.activate(rows[this.focus[0]][this.focus[1]], true);
+      this.activate(this.focus, true);
       return true;
     }
-    if (!this.focus) {
-      this.focus = [0, 0];
+    const at = this.focus ? rows.findIndex((row) => row.includes(this.focus!)) : -1;
+    if (at < 0) {
+      this.focus = rows[0][0];
     } else {
-      let [r, c] = this.focus;
+      let r = at;
+      let c = rows[r].indexOf(this.focus!);
       if (name === "ArrowRight") c = Math.min(c + 1, rows[r].length - 1);
       else if (name === "ArrowLeft") c = Math.max(c - 1, 0);
       else if (name === "ArrowDown" || name === "ArrowUp") {
@@ -517,7 +525,7 @@ class Popup {
         c = Math.round(frac * (rows[nr].length - 1));
         r = nr;
       }
-      this.focus = [r, c];
+      this.focus = rows[r][c];
     }
     this.paint();
     return true;
