@@ -83,6 +83,39 @@ describe("reading a font file's metadata", () => {
     assert.equal(why(Buffer.alloc(2)), "the file is cut short");
   });
 
+  test("malformed files are refused or read safely, never thrown past the reader (Sonnet code r1 #2)", () => {
+    const why = (b: Buffer) => {
+      try {
+        return `read ${readFaceInfo(b).family}`;
+      } catch (err) {
+        assert.ok(err instanceof FontError, String(err));
+        return err.message;
+      }
+    };
+    // A table record pointing past the end of the file.
+    const past = sfnt({ family: "A" });
+    past.writeUInt32BE(past.length + 100, 12 + 8);
+    assert.equal(why(past), "the file is cut short");
+    // A WOFF2 whose packed tables are garbage, or cut short.
+    const w2 = woff2({ family: "A" });
+    const garbage = Buffer.from(w2);
+    garbage.fill(0x5a, garbage.length - 20);
+    assert.equal(why(garbage), "its tables don't unpack to their size");
+    assert.equal(why(w2.subarray(0, w2.length - 10)), "the file is cut short");
+    // Counts that claim more records or axes than the tables hold: read up to what's there.
+    const names = sfnt({ family: "Counted", wght: [100, 900] });
+    const dirAt = (tag: string) => {
+      for (let i = 0; i < names.readUInt16BE(4); i++) if (names.toString("latin1", 12 + i * 16, 16 + i * 16) === tag) return names.readUInt32BE(12 + i * 16 + 8);
+      throw new Error(tag);
+    };
+    names.writeUInt16BE(0xffff, dirAt("name") + 2);
+    names.writeUInt16BE(0xffff, dirAt("fvar") + 8);
+    assert.equal(why(names), "read Counted");
+    // A name with line breaks or control characters can't forge log lines; long names are cut.
+    assert.equal(readFaceInfo(sfnt({ family: "Evil\nfonts: other: Fake as fake\u0007" })).family, "Evil fonts: other: Fake as fake");
+    assert.equal(readFaceInfo(sfnt({ family: "x".repeat(300) })).family, "x".repeat(100));
+  });
+
   test("a table that unpacks to more than it declares is refused, before it's all unpacked (Sol code r1 #1)", () => {
     const why = (b: Buffer) => {
       try {

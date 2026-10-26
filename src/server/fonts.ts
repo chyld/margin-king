@@ -207,7 +207,8 @@ function nameOf(table: Buffer | undefined, id: number): string | null {
     } else {
       continue;
     }
-    text = text.replace(/\0/g, "").trim();
+    // Names go to the log and the API: no control characters or line breaks, at most 100 characters.
+    text = Array.from(text.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, " ").replace(/\s+/g, " ").trim()).slice(0, 100).join("").trim();
     if (text && (!best || rank < best.rank)) best = { rank, text };
   }
   return best?.text ?? null;

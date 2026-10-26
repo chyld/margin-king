@@ -193,3 +193,28 @@ test("a list opened before the font list arrives fills in when it does (Muse cod
   release();
   await expect.poll(() => listNames(page)).toEqual(["Default", "gone (not installed) ✓", "#Monospace", "Fira Code", "Liberation Mono", "#Other", "Liberation Sans", "Liberation Serif"]);
 });
+
+test("with no fonts installed the Font button is hidden, unless the target has a font (Sonnet code r1 #2)", async ({ page }) => {
+  await page.route("**/api/fonts", (route) => route.fulfill({ json: { fonts: [] } }));
+  await login(page);
+  await newNoteWith(page, "plain =={font-gone}word== end");
+  await select(page, 0, 5);
+  await expect(page.locator(".fmt-popup")).toBeVisible();
+  await expect(page.locator(".fmt-popup .fmt-font")).toBeHidden();
+  await select(page, 21, 25);
+  await expect(page.locator(".fmt-popup .fmt-font")).toBeVisible();
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect(await listNames(page)).toEqual(["Default", "gone (not installed) ✓"]);
+});
+
+test("the pinned bar sets the font of the code block the cursor is in (Sonnet code r1 #2)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "intro\n```\ncode here\n```");
+  await select(page, 12);
+  await page.click(".palette");
+  await expect(page.locator(".fmt-popup .fmt-font")).toBeEnabled();
+  await page.locator(".fmt-popup .fmt-font").click();
+  expect(await listNames(page)).toEqual(["Default ✓", "#Monospace", "Fira Code", "Liberation Mono"]);
+  await page.locator(".fmt-font-item", { hasText: "Fira Code" }).click();
+  expect(await raw(page)).toBe("intro\n```font-fira-code\ncode here\n```");
+});

@@ -1279,7 +1279,9 @@ picked code fonts show their ligatures; a word in another font with no color get
   skipped unread; a table Margin reads may not claim more than 4 MB, nor a WOFF2 file's tables more
   than 256 MB together; decompression stops at the declared size (`maxOutputLength`), and a table
   that doesn't unpack to exactly that size, or a WOFF table longer packed than unpacked, makes the
-  file skipped. Names stored as Mac Roman are decoded as Mac Roman. From the tables:
+  file skipped. Names stored as Mac Roman are decoded as Mac Roman. A name goes to the log and the
+  API, so its control characters and line breaks become spaces and it's cut to 100 characters. From
+  the tables:
   - **family**: `name` ID 16 (typographic family) if present, else ID 1, preferring Windows
     English (3/1/0x409, then any 3/1 or 3/10), then Mac Roman (1/0), then Unicode (0/*);
   - **weight**: `OS/2` `usWeightClass`;

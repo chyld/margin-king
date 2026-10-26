@@ -183,8 +183,9 @@ export function formatState(ctx: FormatCtx, from: number, to: number, pinned: bo
     const stored = [...cs.map((c) => c.style.font), ...fonts.blocks.map((b) => ctx.a.doc.blocks[b].font)];
     state.fonts = [...new Set(stored.filter((f): f is string => f !== null))];
   }
+  // The font's target, when there is one, is this same range: its rows are built once.
   const range = target ?? { from, to };
-  const { lines, targets } = prepare(ctx, range.from, Math.max(range.to, range.from));
+  const { lines, targets } = fonts?.p ?? prepare(ctx, range.from, Math.max(range.to, range.from));
   if (lines.some(isBlockLine) || !lines.some(isRichLine)) state.onlyCode = true;
   const all = targets.flat();
   if (!all.length) return state;
