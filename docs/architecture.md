@@ -1179,4 +1179,6 @@ off render-mode protection for long notes.
 Changed from the README by the owner after the build (2026-10-25): the editor paper fills the main
 area's width instead of stopping at 920px (README §4.6); the trash banner matches it. The
 favicon and logo icon (README §4.6) are redrawn: a white lowercase "m" on a smooth violet rounded
-square with a soft top sheen, and a small amber dot (`public/favicon.svg`, used by every page).
+square with a soft top sheen, and a small amber dot (`public/favicon.svg`, used by every page). The
+palette button's icon is a line-drawn highlighter over a coral → amber → mint → violet stroke,
+instead of a palette with four paint dots (README §4.6).

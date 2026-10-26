@@ -557,21 +557,6 @@ button {
   cursor: default;
 }
 
-.palette .dot {
-  stroke: none;
-}
-.palette .dot-1 {
-  fill: #ff7a6b;
-}
-.palette .dot-2 {
-  fill: #ebb353;
-}
-.palette .dot-3 {
-  fill: #53d8b1;
-}
-.palette .dot-4 {
-  fill: #9f8bff;
-}
 .palette.is-pressed {
   background: #efeaff;
   box-shadow: inset 0 0 0 1.5px var(--violet);
