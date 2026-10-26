@@ -354,3 +354,22 @@ test("in the list, Up from the top, Left or Right take the ring back to the Font
   await expect(page.locator(".fmt-font-list")).toBeVisible();
   expect(await raw(page)).toBe("x word y");
 });
+
+test("the list opens at the top each time, not where it was last scrolled", async ({ page }) => {
+  // Narrow, so the list docks and is short enough to scroll. A hidden element keeps its scroll
+  // position, and the browser restores it when the list shows again.
+  await page.setViewportSize({ width: 700, height: 800 });
+  await login(page);
+  await newNoteWith(page, "a =={font-fira-code}one== b two");
+  const list = page.locator(".fmt-font-list");
+  const text = await raw(page);
+  await select(page, text.indexOf("two"), text.indexOf("two") + 3);
+  await page.locator(".fmt-popup .fmt-font").click();
+  await list.evaluate((l) => (l.scrollTop = l.scrollHeight));
+  await page.locator(".fmt-font-item", { hasText: "Liberation Serif" }).click();
+  await expect(list).toBeHidden();
+  await select(page, text.indexOf("one"), text.indexOf("one") + 3);
+  await page.locator(".fmt-popup .fmt-font").click();
+  await expect(page.locator(".fmt-font-item", { hasText: "Fira Code" })).toHaveClass(/is-current/);
+  expect(await list.evaluate((l) => l.scrollTop)).toBe(0);
+});

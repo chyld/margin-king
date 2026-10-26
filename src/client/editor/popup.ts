@@ -192,6 +192,8 @@ class Popup {
     this.listFocus = null;
     if (open) {
       this.buildList();
+      // Each opening starts at the top (the element is reused, and keeps its last scroll).
+      this.fontList.scrollTop = 0;
       // Opened from the keyboard, the ring moves into the list, onto the checked entry.
       if (keyboard) {
         this.listFocus = this.checkedItem();

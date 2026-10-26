@@ -1435,7 +1435,10 @@ picked code fonts show their ligatures; a word in another font with no color get
     font). The ring can rest on these, and opens on one that's checked, but Enter does nothing
     there. The open list is built again when the target's fonts change under it (an undo) or the
     installed fonts arrive. The list scrolls past about 6 entries (about 4 when docked), with
-    `touch-action: pan-y` and `overscroll-behavior: contain`.
+    `touch-action: pan-y` and `overscroll-behavior: contain`, and opens scrolled to the top each
+    time (a hidden element keeps its scroll, which the browser restores when it shows again). Entries
+    light up on hover only where there's a real hover (`@media (hover: hover)`), so a touch screen
+    doesn't leave one lit.
   - Picking an entry applies the operation and closes the list; the popup stays, with the same text
     selected (README §3.6). A refusal shows the hint, as for any option.
   - Entries are **not** popup cells: they live in their own container, outside the `pointerdown`

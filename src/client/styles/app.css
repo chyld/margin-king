@@ -1407,8 +1407,11 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fmt-font-item:hover:not(:disabled) {
-  background: var(--selection);
+/* Only where there's a real hover: a touch screen would leave the tapped entry lit. */
+@media (hover: hover) {
+  .fmt-font-item:hover:not(:disabled) {
+    background: var(--selection);
+  }
 }
 .fmt-font-item.is-current::before {
   content: "";
