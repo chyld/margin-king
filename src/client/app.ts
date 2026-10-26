@@ -3,6 +3,7 @@
 import { Actions } from "./actions.ts";
 import { api, setUnauthorizedHandler } from "./api.ts";
 import { Editor } from "./editor/editor.ts";
+import { loadFonts } from "./fonts.ts";
 import { prefs } from "./prefs.ts";
 import { Store, type AppState } from "./state.ts";
 import { $ } from "./ui/dom.ts";
@@ -13,6 +14,8 @@ import { toast } from "./ui/toast.ts";
 
 async function boot(): Promise<void> {
   const { user } = await api<{ user: string }>("GET", "/api/session");
+  // In parallel with the note; text shows in the default fonts until the list arrives.
+  void loadFonts();
   const params = new URLSearchParams(location.search);
   const phone = window.matchMedia("(max-width: 760px)").matches;
   const initial: AppState = {

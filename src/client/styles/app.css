@@ -851,6 +851,13 @@ button {
   font-size: 15.5px;
   line-height: 1.65;
 }
+/* The note's default font, behind a picked font while it loads (architecture §15, Fonts). */
+.editor .cm-editor {
+  --note-font: var(--mono);
+}
+.editor .font-prop.mode-render {
+  --note-font: var(--ui);
+}
 
 .mode-render .cm-title {
   font-size: 1.9em;
@@ -871,6 +878,11 @@ button {
 }
 .cm-hl-b {
   font-weight: 750;
+}
+/* A word in another font, with no color behind it, doesn't push the text beside it apart. */
+.cm-hl-font:not(.cm-hl-color) {
+  padding-left: 0;
+  padding-right: 0;
 }
 .cm-hl-u {
   text-decoration: underline;
@@ -1336,6 +1348,88 @@ button {
 }
 .fmt-popup.is-compact .fmt-swatches {
   gap: 3px;
+}
+
+/* The Font button and its list (architecture §15, Fonts): the list takes the swatches' place. */
+.fmt-aa {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  font-size: 14px;
+}
+.fmt-btn.fmt-font[aria-expanded="true"]:not(.is-on) {
+  border-color: var(--violet);
+  color: var(--violet);
+}
+.fmt-popup.is-fonts .fmt-swatches {
+  display: none;
+}
+.fmt-font-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 212px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+.fmt-font-list[hidden] {
+  display: none;
+}
+.fmt-popup.is-docked .fmt-font-list {
+  max-height: 148px;
+}
+.fmt-font-head {
+  padding: 6px 8px 2px;
+  font: 700 10.5px/1.2 var(--ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fmt-font-item {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fmt-font-item:hover:not(:disabled) {
+  background: var(--selection);
+}
+.fmt-font-item.is-current::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 9px;
+  height: 5px;
+  margin-top: -4px;
+  border-left: 2px solid var(--violet);
+  border-bottom: 2px solid var(--violet);
+  transform: rotate(-45deg);
+}
+.fmt-font-item.is-missing {
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+}
+.fmt-font-item.is-focus {
+  outline: 2px solid #ff5fa2;
+  outline-offset: -2px;
 }
 
 .link-chip {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { lineTokens, parseDoc } from "../../src/shared/syntax.ts";
-import { buildRow, chars, newChars, piecesToChanges, serializeRows, setStyle3, type Row } from "../../src/shared/model.ts";
+import { buildRow, chars, fixEquals, newChars, piecesToChanges, serializeRows, setStyle, type Row } from "../../src/shared/model.ts";
 
 function rowsOf(text: string): Row[] {
   return parseDoc(text).lines.map((l) => buildRow(l, lineTokens(l)));
@@ -28,6 +28,8 @@ const SAMPLES = [
   "emoji 👩‍💻 =={b}👍==",
   "=={red}a===",
   "=={b}x== =={b}y==",
+  "=={font-inter}fonts== =={lime+font-fira-code}`x` y== =={font-a+u}order==",
+  "```python font-fira-code\n=={font-x}literal==\n```",
 ];
 
 test("an unchanged model serializes to exactly the original text", () => {
@@ -35,7 +37,7 @@ test("an unchanged model serializes to exactly the original text", () => {
 });
 
 test("random lines round trip", () => {
-  const alphabet = ["a", "b", " ", "=", "==", "=={b}", "=={green}", "=={u+lime}", "`", "[", "]", "(", ")", "https://x.co", "[t](https://y.co)", "{", "}", "+"];
+  const alphabet = ["a", "b", " ", "=", "==", "=={b}", "=={green}", "=={u+lime}", "=={font-x}", "=={lime+font-a-b}", "`", "[", "]", "(", ")", "https://x.co", "[t](https://y.co)", "{", "}", "+", "\n```font-x\n"];
   let seed = 42;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) % 1000) / 1000;
   for (let n = 0; n < 3000; n++) {
@@ -57,7 +59,7 @@ test("restyling writes canonical options; untouched tokens keep theirs", () => {
   const s = "=={u+lime}a== b";
   const rows = rowsOf(s);
   const cs = chars(rows[0]);
-  setStyle3(cs[2], { color: null, b: true, u: false });
+  setStyle(cs[2], { b: true });
   assert.equal(roundTrip(s), s);
   assert.equal(serializeRows(rows).toString((a, b) => s.slice(a, b)), "=={u+lime}a== =={b}b==");
 });
@@ -73,7 +75,7 @@ test("text typed into a token keeps its marker bytes", () => {
 test("changes keep retained characters in place", () => {
   const s = "alpha\nbravo";
   const rows = rowsOf(s);
-  for (const row of rows) for (const c of chars(row)) setStyle3(c, { color: null, b: true, u: false });
+  for (const row of rows) for (const c of chars(row)) setStyle(c, { b: true });
   const out = serializeRows(rows);
   const changes = piecesToChanges(out.pieces, 0, s.length, (a, b) => s.slice(a, b));
   assert.deepEqual(changes, [
@@ -82,4 +84,25 @@ test("changes keep retained characters in place", () => {
     { from: 6, to: 6, insert: "=={b}" },
     { from: 11, to: 11, insert: "==" },
   ]);
+});
+
+test("fonts: a run with only a font is written as a highlight (architecture §15, Fonts)", () => {
+  const write = (text: string, rows: Row[]) => serializeRows(rows).toString((a, b) => text.slice(a, b));
+  const rows = rowsOf("plain");
+  for (const c of chars(rows[0])) setStyle(c, { font: "inter" });
+  assert.equal(write("plain", rows), "=={font-inter}plain==");
+  // Restyling keeps the font, and changing only the font rewrites the marker.
+  const two = rowsOf("=={u+font-a}x==");
+  setStyle(chars(two[0])[0], { b: true });
+  assert.equal(write("=={u+font-a}x==", two), "=={b+u+font-a}x==");
+  const three = rowsOf("=={font-a}x==");
+  setStyle(chars(three[0])[0], { font: "b" });
+  assert.equal(write("=={font-a}x==", three), "=={font-b}x==");
+});
+
+test("fonts: an = that must leave a highlight loses its font too", () => {
+  const rows = rowsOf("sum=");
+  for (const c of chars(rows[0])) setStyle(c, { font: "inter" });
+  assert.equal(fixEquals(rows[0]), true);
+  assert.equal(serializeRows(rows).toString((a, b) => "sum=".slice(a, b)), "=={font-inter}sum==" + "=");
 });

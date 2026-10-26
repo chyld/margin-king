@@ -1,9 +1,10 @@
 // The note editor (architecture §7.6): one EditorView for the app's lifetime; a new EditorState per
 // opened note (which resets undo history).
 
-import { Compartment, EditorState, Prec, type Extension, type Text } from "@codemirror/state";
+import { Compartment, EditorState, Prec, Transaction, type Extension, type Text } from "@codemirror/state";
 import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { history, historyKeymap, insertNewline, standardKeymap } from "@codemirror/commands";
+import { onFontsChange } from "../fonts.ts";
 import { caretAfterHistory, caretFilter, normalizeCaret } from "./caret.ts";
 import { codeTabKeymap } from "./codetab.ts";
 import { copyHandlers } from "./copy.ts";
@@ -70,6 +71,14 @@ export class Editor {
     this.mode = mode;
     this.font = font;
     this.view = new EditorView({ parent, state: this.makeState({ id: "", text: "", generation: 0, readOnly: true, collapsed: [] }) });
+    // When the font list arrives or a font finishes loading, text widths change. CodeMirror only
+    // re-measures for fonts once, when it's created, and a width change that keeps the line heights
+    // doesn't redraw the caret or selection; setting the selection again does (architecture §15).
+    onFontsChange(() => {
+      if (this.view.composing) return;
+      this.view.requestMeasure();
+      this.view.dispatch({ selection: this.view.state.selection, annotations: Transaction.addToHistory.of(false) });
+    });
   }
 
   private makeState(o: OpenOptions): EditorState {

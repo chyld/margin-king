@@ -7,6 +7,7 @@ import { isImageName, isNoteId, isTag, isUsername } from "../shared/rules.ts";
 import { HttpError, json, readJson, viaHttps } from "./http.ts";
 import type { SessionStore } from "./sessions.ts";
 import { SESSION_DAYS } from "./sessions.ts";
+import type { FontTable } from "./fonts.ts";
 import { StoreError, type NoteStore } from "./store.ts";
 import { BusyError, verifyPassword, type HashQueue, type UsersCache } from "./users.ts";
 
@@ -28,6 +29,7 @@ export interface Deps {
   sessions: SessionStore;
   users: UsersCache;
   hashes: HashQueue;
+  fonts: FontTable;
 }
 
 export type Handler = (c: Ctx) => Promise<void>;
@@ -37,6 +39,8 @@ export interface Route {
   pattern: RegExp;
   access: "public" | "user";
   handler: Handler;
+  /** The route sets its own `Cache-Control` instead of the API's `no-store` (§5.2). */
+  cache?: boolean;
 }
 
 export function sessionCookie(req: IncomingMessage, token: string | null): string {
@@ -77,7 +81,7 @@ export function apiRoutes(d: Deps): Route[] {
     }
   };
 
-  const routes: [string, string, Route["access"], Handler][] = [
+  const routes: [string, string, Route["access"], Handler, { cache?: boolean }?][] = [
     [
       "POST",
       "/api/login",
@@ -235,13 +239,34 @@ export function apiRoutes(d: Deps): Route[] {
         }
         createReadStream(path).on("error", () => c.res.destroy()).pipe(c.res);
       },
+      { cache: true },
+    ],
+    // Fonts (architecture §15, Fonts): read once at startup, served from memory.
+    ["GET", "/api/fonts", "user", async (c) => json(c.res, 200, d.fonts.list())],
+    [
+      "GET",
+      "/api/fonts/:id/:file",
+      "user",
+      async (c) => {
+        const face = d.fonts.face(c.params.id, c.params.file);
+        if (!face) throw new HttpError(404, "Not found");
+        // The URL holds the file's hash, so it never changes; private, as fonts are only for users.
+        c.res.writeHead(200, {
+          "Content-Type": face.type,
+          "Content-Length": face.bytes.length,
+          "Cache-Control": "private, max-age=31536000, immutable",
+        });
+        c.res.end(c.req.method === "HEAD" ? undefined : face.bytes);
+      },
+      { cache: true },
     ],
   ];
 
-  return routes.map(([method, path, access, handler]) => ({
+  return routes.map(([method, path, access, handler, opts]) => ({
     method,
     pattern: new RegExp(`^${path.replace(/:(\w+)/g, "(?<$1>[^/]+)")}$`),
     access,
     handler: wrap(handler),
+    cache: opts?.cache ?? false,
   }));
 }

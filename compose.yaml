@@ -6,5 +6,7 @@ services:
       - "5555:5555"
     volumes:
       - ./data:/data
+      # The admin's fonts, read at startup (architecture §15, Fonts).
+      - ./fonts:/fonts:ro
     user: "${MARGIN_UID:-1000}:${MARGIN_GID:-1000}"
     stop_grace_period: 30s

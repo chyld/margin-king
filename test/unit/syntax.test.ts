@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDoc, parseInline, parseOptions, serializeOptions, type Token } from "../../src/shared/syntax.ts";
+import { fenceFont, parseDoc, parseInline, parseOptions, serializeOptions, withFenceFont, type Token } from "../../src/shared/syntax.ts";
 import { noteTitle, stripInline, visibleText } from "../../src/shared/text.ts";
 
 function shape(tokens: Token[], s: string): unknown[] {
@@ -94,9 +94,9 @@ test("a whole link can sit inside a highlight", () => {
 });
 
 test("options round trip", () => {
-  assert.deepEqual(parseOptions("lime+b+u"), { color: "lime", b: true, u: true });
+  assert.deepEqual(parseOptions("lime+b+u"), { color: "lime", b: true, u: true, font: null });
   assert.equal(parseOptions("b+lime+b"), null);
-  assert.equal(serializeOptions({ color: "red-deep", b: false, u: true }), "red-deep+u");
+  assert.equal(serializeOptions({ color: "red-deep", b: false, u: true, font: null }), "red-deep+u");
 });
 
 test("parseDoc: code blocks, headings, screenshots, sections", () => {
@@ -117,7 +117,7 @@ test("parseDoc: code blocks, headings, screenshots, sections", () => {
     doc.lines.map((l) => l.kind),
     ["text", "heading", "fence-open", "code", "code", "fence-close", "image", "heading", "text"],
   );
-  assert.deepEqual(doc.blocks, [{ open: 2, close: 5 }]);
+  assert.deepEqual(doc.blocks, [{ open: 2, close: 5, font: null }]);
   assert.deepEqual(doc.sections, [
     { heading: 1, end: 6, color: "green-deep" },
     { heading: 7, end: 8, color: "blue" },
@@ -192,4 +192,37 @@ test("imageLine always writes a line the parser reads back (MiniMax resize #5)",
     assert.equal(imageLine("a7p2xq9d.png", w), `![${out}%](a7p2xq9d.png)`);
     assert.deepEqual(matchImage(imageLine("a7p2xq9d.png", w)), { name: "a7p2xq9d.png", width: out });
   }
+});
+
+test("fonts: a highlight option font-<id> (architecture §15, Fonts)", () => {
+  assert.deepEqual(parseOptions("font-inter"), { color: null, b: false, u: false, font: "inter" });
+  assert.deepEqual(parseOptions("u+font-jetbrains-mono+lime"), { color: "lime", b: false, u: true, font: "jetbrains-mono" });
+  assert.equal(serializeOptions({ color: "lime", b: true, u: true, font: "fira-code" }), "lime+b+u+font-fira-code");
+  // At most one font; ids are lower-case words joined by single hyphens, at most 48 characters.
+  for (const bad of ["font-a+font-b", "font-", "font--a", "font-a-", "font-A", `font-${"a".repeat(49)}`]) {
+    assert.equal(parseOptions(bad), null, bad);
+  }
+  assert.equal(parseOptions(`font-${"a".repeat(48)}`)?.font, "a".repeat(48));
+  assert.equal(parseOptions(`font-${"a".repeat(46)}-b`)?.font, `${"a".repeat(46)}-b`);
+  // Any well-formed id parses, installed or not; the server doesn't know the font list.
+  assert.deepEqual(inline("=={font-nowhere-2}x=="), [{ type: "hl", text: "x", opts: "font-nowhere-2" }]);
+});
+
+test("fonts: a code block's font is a word on its opening fence", () => {
+  const blockFont = (fence: string) => parseDoc(`${fence}\nx\n\`\`\``).blocks[0]?.font;
+  assert.equal(blockFont("```font-fira-code"), "fira-code");
+  assert.equal(blockFont("```python font-fira-code"), "fira-code");
+  assert.equal(blockFont("```  font-a  font-b "), "a");
+  assert.equal(blockFont("```python"), null);
+  assert.equal(blockFont("```font-Inter"), null);
+  assert.equal(blockFont("```x-font-a"), null);
+  assert.equal(blockFont(`\`\`\`font-${"a".repeat(60)}`), null);
+  assert.equal(fenceFont("````font-a"), null);
+  // Setting replaces every font word; Default removes them; the rest of the line is kept.
+  assert.equal(withFenceFont("```", "fira-code"), "```font-fira-code");
+  assert.equal(withFenceFont("```python  ", "fira-code"), "```python font-fira-code");
+  assert.equal(withFenceFont("```font-a python font-b", "c"), "``` python font-c");
+  assert.equal(withFenceFont("```python font-a", null), "```python");
+  assert.equal(withFenceFont("```font-a", null), "```");
+  assert.equal(withFenceFont("```font-Inter", null), "```font-Inter");
 });

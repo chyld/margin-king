@@ -11,7 +11,9 @@ port 5555.
   are listed in [architecture §15](docs/architecture.md#15-features-beyond-the-readme-owner-decisions),
   among them **resizing screenshots**: drag the handle on a screenshot's right edge (or tap the image
   first on a touch screen); double-click (double-tap) the handle for the original size. The `{ }`
-  button beside the trash button shows the note's `meta.json` (read-only).
+  button beside the trash button shows the note's `meta.json` (read-only). **Fonts** the admin
+  installs can be picked for parts of a note with the formatting popup's Aa Font button (code takes
+  only monospace fonts).
 - How this build works: [`docs/architecture.md`](docs/architecture.md), with the review history in
   [`docs/reviews/`](docs/reviews/).
 
@@ -54,6 +56,22 @@ that are missing.
 git pull
 docker compose up -d --build
 ```
+
+### Fonts
+
+Put font files (`.woff2`, `.woff`, `.ttf`, `.otf`) in `./fonts/monospace/` or `./fonts/other/`, then
+restart:
+
+```sh
+unzip ~/Downloads/Fira_Code_v6.2.zip -d fonts/monospace/
+docker compose restart
+```
+
+Unzip downloads as they come: Margin reads each file's own name and weight, so folders and file names
+don't matter, and the licence and readme files are ignored. Fonts for code go in `monospace/`; any
+font can be used for text. The startup log (`docker compose logs margin`) lists the fonts found and
+anything skipped, and why. A note remembers its fonts by name, so if a font is removed its text
+shows in the default font until it's back.
 
 ### Data and backups
 

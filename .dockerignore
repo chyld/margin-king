@@ -1,6 +1,7 @@
 node_modules
 dist
 data
+fonts
 dev-data
 test-results
 playwright-report

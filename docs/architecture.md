@@ -65,6 +65,7 @@ compose.yaml  Dockerfile  .dockerignore  .gitignore  package.json  package-lock.
 cli.js                          `node cli.js …` (README §2 development); imports src/cli/margin-user.ts
 bin/margin-user                 container wrapper: exec node /app/src/cli/margin-user.ts "$@"
 data/.gitkeep                   so a fresh clone has a ./data the user owns (§10)
+fonts/{monospace,other}/.gitkeep  the admin's font folders (§15, Fonts)
 scripts/build.ts                esbuild bundles + palette CSS + copies src/public/ → dist/public/
 src/
   shared/                       pure, no DOM, no I/O; imported by server and client
@@ -84,6 +85,7 @@ src/
     fsx.ts                      atomic write, exclusive create, keyed async locks, file lock, write queue
     users.ts                    users.json read/write (shared with the CLI), password hashing
     sessions.ts                 session store
+    fonts.ts                    the font folders: metadata, scan, faces in memory (§15, Fonts)
   cli/margin-user.ts            add / passwd / remove / list
   client/
     app.ts  login.ts            entry points
@@ -91,6 +93,7 @@ src/
     api.ts                      fetch wrapper
     actions.ts                  everything that changes state: open, save, trash, tags, …
     url.ts  prefs.ts            address bar sync; localStorage
+    fonts.ts                    the font list, its @font-face rules and classes (§15, Fonts)
     ui/                         sidebar, note list, tag filter, search, menu bar, save button,
                                 switches, tag chips + box + suggestions, trash banner,
                                 empty state, toasts, drawer, small DOM helpers
@@ -109,6 +112,7 @@ src/
   public/                       index.html, login.html, 404.html, favicon.svg
 test/
   unit/  server/  e2e/
+  fixtures/fonts/               small OFL fonts for the browser tests (§15, Fonts)
 docs/
 ```
 
@@ -152,10 +156,12 @@ $DATA_DIR/
 ### 5.1 Process and configuration
 
 - One Node process: `node src/server/main.ts`. Environment: `DATA_DIR` (default `./data`), `PORT`
-  (default `5555`), `HOST` (default `0.0.0.0`), `NODE_ENV` (`production` in the image).
+  (default `5555`), `HOST` (default `0.0.0.0`), `NODE_ENV` (`production` in the image), `FONTS_DIR`
+  (default `./fonts`; `/fonts` in the image; §15, Fonts).
 - On start: create `$DATA_DIR/notes` and check the data directory is writable. If not, exit with a
   message naming the directory and the process's UID/GID (so a root-owned `./data` is obvious).
-  Load `users.json` and `sessions.json`, drop expired sessions, listen.
+  Load `users.json` and `sessions.json`, drop expired sessions, read the font folders (never
+  fatal), listen.
 - `requestTimeout` is 0 (uploads have no size limit, README §3.11) and sockets idle for 120 s are
   closed instead.
 - **Shutdown** on `SIGTERM` / `SIGINT` (Node is PID 1 in the container): stop accepting connections,
@@ -171,7 +177,8 @@ $DATA_DIR/
 3. Match the route table: `{ method, path regex, access: "public" | "user", handler }`. `HEAD` is
    accepted wherever `GET` is.
 4. `user` routes without a valid session → 401 `{ error }`. All `/api/*` responses carry
-   `Cache-Control: no-store`, except screenshots, which are revalidated (5.5).
+   `Cache-Control: no-store`, except screenshots, which are revalidated, and font files, which are
+   cached (5.5). Those routes carry a `cache` flag that removes the `no-store`.
 5. Bodies: `readJson(req, limit)` requires `Content-Type: application/json` (415 otherwise) and a
    size limit (413 over it): 64 KB everywhere except note text (50 MB). Uploads are streamed (5.6).
 6. Handlers throw `HttpError(status, message)` for expected errors, which become `{ error }`.
@@ -233,6 +240,8 @@ All bodies and responses are JSON. `Summary` = `{ id, title, created, modified, 
 | `POST /api/trash/empty` | | `{ deleted: n }` |
 | `POST /api/notes/:id/images` | raw bytes, `Content-Type: image/png` | 201 `{ name }`; 415 if not a PNG; 409 if trashed |
 | `GET /api/notes/:id/images/:name` | | the PNG, with `Cache-Control: private, no-cache` and an ETag. The session is checked before any 304, so a browser shared by two users never shows one user's cached screenshot to the other. |
+| `GET /api/fonts` | | `{ fonts: [{ id, name, mono, faces: [{ weight, format, url }] }] }`, the fonts read at startup (§15, Fonts) |
+| `GET /api/fonts/:id/:hash.:ext` | | a font face from memory, with `Cache-Control: private, max-age=31536000, immutable`; 404 unless it's exactly a URL from the list |
 
 Unknown or foreign note → 404 `{ error: "Note not found" }`.
 
@@ -393,7 +402,9 @@ always writes `\n`.)
 1. **Code blocks.** Scan down. A line that **starts with** ```` ``` ```` (anything after it is ignored,
    README §3.5) opens a block, which closes at the next line that is exactly ```` ``` ```` plus optional
    trailing spaces or tabs. Lines between are `code`. If no closing line follows, scanning for blocks
-   stops and the rest is ordinary lines (an unclosed fence is plain text).
+   stops and the rest is ordinary lines (an unclosed fence is plain text). Each block gets
+   `{ open, close, font }`: `font` is the first `font-<id>` word after the opening backticks (§15,
+   Fonts).
 2. **Headings**, among lines not in a block: `^## \{(<color>)\} (?=\S)` with a known color. Each
    heading starts a section that runs to the line before the next heading, or to the last line.
 3. **Screenshots**, among lines not in a block: `^!\[(?:(100|[1-9][0-9])%)?\]\(([a-z0-9]{8}\.png)\)$`
@@ -411,7 +422,7 @@ Each line: `{ index, from, to, kind, block?, section?, heading?: { color, prefix
 3. `h` → **bare URL**, if the previous character isn't a letter, digit or `/`; same character set;
    trailing `. , ; : ! ? ' " * _ ~ =` trimmed;
 4. `=={` → **highlight**, if `{…}` holds valid options (at most one color, `b` and `u` at most once
-   each, joined by `+`) and the **first** `==` after it that isn't inside inline code or a
+   each, and at most one font `font-<id>`, §15 Fonts, joined by `+`) and the **first** `==` after it that isn't inside inline code or a
    `[text](url)` link leaves at least one character of content. Otherwise this `=` is literal and
    scanning moves on. Inside a highlight, code, links and bare URLs are parsed; highlights are not.
    (README §3.5 lists "links and bare URLs" separately, so bare URLs are *not* skipped when looking
@@ -438,7 +449,7 @@ The core of this design. It applies to `text` lines and to a heading's text afte
 screenshot lines are handled by line rules (§7.7).
 
 ```ts
-type Style = { color: string | null; b: boolean; u: boolean; code: boolean };
+type Style = { color: string | null; b: boolean; u: boolean; font: string | null; code: boolean };
 type LinkRef = { url: string; form: "md" | "bare"; id: number };   // id: which link it belongs to
 type VChar = {
   ch: string; style: Style; link: LinkRef | null;
@@ -475,7 +486,8 @@ type LineModel = {
   it deleted) keeps its original marker bytes. So `=={u+lime}` keeps its option order however its
   text is edited.
 - Only tokens the operation created or restyled are written canonically:
-  - runs of equal `(color, b, u)` become `=={opts}…==`, with options written color, `b`, `u`;
+  - runs of equal `(color, b, u, font)` become `=={opts}…==`, with options written color, `b`, `u`,
+    font (a run with only a font is a highlight too; §15, Fonts);
   - inside a run, characters of one link become `[…](url)`, or stay bare for `form: "bare"`;
   - runs of `code` become `` `…` ``.
 
@@ -524,7 +536,10 @@ first", and nothing changes.
 - **B / U**: add to every target character if any lacks it, else remove from all.
 - **A swatch**: set that color on the target, or remove it if every target character already has it.
   **Remove color**: remove the color, keep bold and underline. **Clear formatting**: remove color,
-  bold, underline and inline code; links stay.
+  bold, underline, font and inline code; links stay.
+- **A font** (§15, Fonts): set on everything in the target it's allowed on (text any font; inline
+  code and touched code blocks only a monospace one, on the block's opening fence), or removed by
+  Default. Its own branch before target resolution, like `</>`; a cursor in a block targets it.
 - **On part of a `[text](url)` link**, every style change (B, U, a color, Remove color, Clear
   formatting) splits the link at the style boundary into adjacent links to the same address (§13).
   On part of a bare URL it's refused (§12, item 1).
@@ -557,11 +572,12 @@ first", and nothing changes.
   selected text becomes a `[text](url)` link to it, like the Link operation, verified, and refused if
   it can't be written. Any other paste is an ordinary paste.
 - **Which lines an operation touches.** Formatting acts only on `text` lines and heading text. Code,
-  fence and screenshot lines inside a target are skipped. `</>` is the one operation that acts on
-  code blocks (its rule 1), and the only one enabled when the target is inside a block.
+  fence and screenshot lines inside a target are skipped. `</>` and a font are the operations that act
+  on code blocks, and the only ones enabled when the target is inside a block.
 - **`formatState`**: which buttons are on, which swatch is ringed and which are disabled. Link is on
   for bare URLs too. A heading's characters count as having the section's color. Inside a code block,
-  everything but `</>` is disabled.
+  everything but `</>` and Font is disabled. It also gives the target's font (§15, Fonts), and a
+  cursor in a code block counts as a target when the bar is pinned.
 
 ### 6.5 Derived text (`text.ts`)
 
@@ -722,7 +738,7 @@ reveals itself as soon as the caret lands.
 - a screenshot line becomes an image widget. It re-measures the editor when the image loads, and
   shows *Missing screenshot* in italics if the image fails to load;
 - highlight, code and link marks, with links titled "`<url>` · Ctrl+click to open" ("Cmd+click" on
-  a Mac);
+  a Mac); a highlight's font, and a block's, as `ff-<id>` classes (§15, Fonts);
 - the end-of-file marker, a block widget at the document end, in both modes.
 
 **Collapsed sections.** A `StateField<Set<string>>` of heading-line texts, changed by a
@@ -896,7 +912,8 @@ A view plugin that owns one DOM element, built from `formatState` (§6.4) on eve
   on the first option (B), and the arrows move it from then on (rows as in README §3.6). Enter
   applies the focused option and Esc closes the popup. Until an arrow key is pressed, Enter and the
   other keys edit the note as usual (§13). With the bar pinned and nothing selected, the arrows and
-  Enter always go to the note.
+  Enter always go to the note. Only a selection that moves drops the ring.
+- **Font** (§15, Fonts): a button in the second row opens the font list in place of the swatches.
 - **Hint line**: "Enter applies · Esc closes" by default, or "Select some text first", "That isn't a
   web address" or "Can't apply that here".
 - **Placement**: under the selection end (flipped above if there's no room, clamped to the window);
@@ -1063,9 +1080,11 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
   1. `npm ci` (from the committed `package-lock.json`, which `npm ci` requires) and `npm run build`;
   2. copy `package.json`, `src/` (server, shared, cli), `bin/margin-user` and `dist/public/`. There are
      no runtime dependencies, so this stage has no `node_modules`. It sets
-     `ENV NODE_ENV=production DATA_DIR=/data PORT=5555` and runs `CMD ["node", "src/server/main.ts"]`.
-- **compose.yaml**: service `margin`, `restart: unless-stopped`, port `5555:5555`, volume
-  `./data:/data`, user `${MARGIN_UID:-1000}:${MARGIN_GID:-1000}`, `stop_grace_period: 30s` (§5.1).
+     `ENV NODE_ENV=production DATA_DIR=/data PORT=5555 FONTS_DIR=/fonts` and runs
+     `CMD ["node", "src/server/main.ts"]`. Fonts aren't in the image (`.dockerignore` has `fonts`).
+- **compose.yaml**: service `margin`, `restart: unless-stopped`, port `5555:5555`, volumes
+  `./data:/data` and `./fonts:/fonts:ro` (§15, Fonts), user `${MARGIN_UID:-1000}:${MARGIN_GID:-1000}`,
+  `stop_grace_period: 30s` (§5.1).
 - **Data directory**: the repo contains `data/.gitkeep` (`.gitignore` has `data/*` and
   `!data/.gitkeep`), so `git clone` creates `./data` owned by the user who cloned it. Docker then
   doesn't create it as root, and the README §2 install commands work unchanged. If the folder still
@@ -1441,4 +1460,20 @@ picked code fonts show their ligatures; a word in another font with no color get
     rules (computed `font-family`, `document.fonts` loaded), ligatures, padding, missing fonts, raw
     mode, the keyboard, the re-measure after a font whose download is held back, and on the phone
     project a tap that applies and a swipe that scrolls without applying.
-- On approval, the build folds this into §4, §5.1, §5.2, §5.5, §6.2–6.4, §7.6–7.8, §9 and §10.
+- **Settled in the build** (2026-10-26):
+  - `setStyle3` became `setStyle(c, patch)`, which changes any of color, `b`, `u` and font;
+    `UNSTYLED` is what an `=` that must leave a highlight gets.
+  - A font is also italic when its style name (`name` ID 17, else 2) says *Italic* or *Oblique*:
+    some fonts (KaTeX's) flag their italics as Regular.
+  - The scan reads each file's metadata, keeps only that, then reads the chosen faces again and
+    checks them, so a folder of large files doesn't sit in memory twice.
+  - Checked against the real Fira Code 6.2, JetBrains Mono 2.304, Source Code Pro, Inter 4.1 and
+    JetBrains Mono Nerd Font downloads, unzipped straight into the folders; the server tests
+    reproduce their layouts.
+  - When the list arrives or a font loads, the editor sets its selection again (outside a
+    composition), which redraws the caret and selection; only a selection that moves drops the
+    popup's focus ring or closes the list.
+  - A list entry acts on a click only if the pointer also went down on it. Opening the list moves
+    things (a docked popup grows upward), and the click of the tap that opened it would otherwise
+    land on whatever entry is now under the finger.
+- Folded into §3, §5.1, §5.2, §5.5, §6.2–6.4, §7.6, §7.8 and §10.

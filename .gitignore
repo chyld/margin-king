@@ -2,6 +2,8 @@ node_modules/
 dist/
 data/*
 !data/.gitkeep
+fonts/*/*
+!fonts/*/.gitkeep
 dev-data/
 test-results/
 playwright-report/

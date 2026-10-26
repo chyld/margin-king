@@ -13,7 +13,7 @@ export interface Running {
   close(): Promise<void>;
 }
 
-export async function start(): Promise<Running> {
+export async function start(opts: { fontsDir?: string } = {}): Promise<Running> {
   const dataDir = await mkdtemp(join(tmpdir(), "margin-test-data-"));
   const publicDir = await mkdtemp(join(tmpdir(), "margin-test-public-"));
   await writeFile(join(publicDir, "index.html"), "<!doctype html><title>app</title>");
@@ -21,7 +21,7 @@ export async function start(): Promise<Running> {
   await writeFile(join(publicDir, "404.html"), "<!doctype html><title>404</title>");
   await mkdir(join(publicDir, "assets"));
   await writeFile(join(publicDir, "assets", "app.js"), "console.log(1)");
-  const app = await createApp({ dataDir, port: 0, host: "127.0.0.1", production: false, publicDir });
+  const app = await createApp({ dataDir, port: 0, host: "127.0.0.1", production: false, publicDir, fontsDir: opts.fontsDir });
   const port = await app.listen();
   return {
     app,

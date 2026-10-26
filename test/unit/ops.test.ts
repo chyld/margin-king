@@ -121,3 +121,77 @@ test("a link split by formatting acts as one link (DeepSeek r1 #6)", () => {
   const removed = fmt("[«d»](https://a.com)=={b}[o](https://a.com)==[cs](https://a.com)", { type: "link", url: "" });
   assert.equal(removed, "«d»=={b}o==cs");
 });
+
+// Fonts (architecture §15, Fonts).
+const mono = (font: string | null): FormatOp => ({ type: "font", font, mono: true });
+const other = (font: string | null): FormatOp => ({ type: "font", font, mono: false });
+
+test("fonts: text takes any font; picking it again changes nothing; Default removes it", () => {
+  assert.equal(fmt("a «word» b", other("inter")), "a =={font-inter}«word»== b");
+  assert.equal(fmt("a «word» b", mono("fira-code")), "a =={font-fira-code}«word»== b");
+  assert.equal(fmt("=={font-inter}«word»==", other("inter")), "=={font-inter}«word»==");
+  assert.equal(fmt("=={lime+font-inter}«word»==", other(null)), "=={lime}«word»==");
+  assert.equal(fmt("=={font-a}x«y»z==", other("b")), "=={font-a}x===={font-b}«y»===={font-a}z==");
+  // Clear formatting removes fonts too.
+  assert.equal(fmt("=={b+font-inter}«x»==", { type: "clear" }), "«x»");
+});
+
+test("fonts: other formatting keeps a font", () => {
+  assert.equal(fmt("=={font-inter}«x»==", { type: "bold" }), "=={b+font-inter}«x»==");
+  assert.equal(fmt("=={font-inter}«x»==", { type: "color", color: "lime" }), "=={lime+font-inter}«x»==");
+  assert.equal(fmt("=={lime+font-inter}«x»==", { type: "removeColor" }), "=={font-inter}«x»==");
+  assert.equal(fmt("=={font-inter}«x»==", { type: "link", url: "https://a.com" }), "=={font-inter}[«x»](https://a.com)==");
+  assert.equal(fmt("=={font-inter}«x»==", { type: "code" }), "=={font-inter}`«x»`==");
+  assert.equal(fmt("## {red} =={font-inter}«T»==", { type: "color", color: "lime" }), "## {lime} =={font-inter}«T»==");
+});
+
+test("fonts: inline code only takes monospace fonts", () => {
+  // An "other" font skips the code; a monospace font is applied to all of it.
+  assert.equal(fmt("«see `x` here»", other("inter")), "=={font-inter}«see ==`x`=={font-inter} here»==");
+  assert.equal(fmt("«see `x` here»", mono("fira-code")), "=={font-fira-code}«see `x` here»==");
+  assert.equal(fmt("«`x`»", other("inter")), "refused:cant");
+  assert.equal(fmt("=={font-fira-code}«`x`»==", other(null)), "`«x»`");
+});
+
+test("fonts: code blocks get a monospace font on the opening fence", () => {
+  assert.equal(fmt("```\n«x»\n```", mono("fira-code")), "```font-fira-code\n«x»\n```");
+  assert.equal(fmt("```python font-a\n«x»\n```", mono("b")), "```python font-b\n«x»\n```");
+  assert.equal(fmt("```font-a\n«x»\n```", other(null)), "```\n«x»\n```");
+  assert.equal(fmt("```\n«x»\n```", other("inter")), "refused:cant");
+  // A cursor in a block, with the bar pinned; and every block a selection touches.
+  assert.equal(fmt("```\nx‸\n```", mono("a"), true), "```font-a\nx‸\n```");
+  assert.equal(fmt("```\n«a\n```\n```\nb»\n```", mono("c")), "```font-c\n«a\n```\n```font-c\nb»\n```");
+});
+
+test("fonts: text and blocks together each take what they can", () => {
+  assert.equal(fmt("«intro\n```\nx»\n```", other("inter")), "=={font-inter}«intro==\n```\nx»\n```");
+  assert.equal(fmt("«intro\n```\nx»\n```", mono("a")), "=={font-a}«intro==\n```font-a\nx»\n```");
+  assert.equal(fmt("=={font-a}«intro==\n```font-a\nx»\n```", mono(null)), "«intro\n```\nx»\n```");
+});
+
+test("fonts: links split, bare URLs refuse, the pinned bar takes the word", () => {
+  assert.equal(fmt("[a «bc»](https://a.com)", other("inter")), "[a ](https://a.com)=={font-inter}[«bc»](https://a.com)==");
+  assert.equal(fmt("https://a.«com»", other("inter")), "refused:cant");
+  assert.equal(fmt("one tw‸o", other("inter"), true), "one =={font-inter}two‸==");
+  assert.equal(fmt("‸", other("inter"), true), "refused:select");
+});
+
+test("fonts: formatState reports the font, mixed fonts and code-only targets", () => {
+  const st = (s: string, pinned = false) => {
+    const { text, from, to } = sel(s);
+    const f = formatState(formatCtx(text), from, to, pinned);
+    return { font: f.font, mixed: f.fontMixed, codeOnly: f.codeOnly, fontable: f.fontable };
+  };
+  assert.deepEqual(st("«plain»"), { font: null, mixed: false, codeOnly: false, fontable: true });
+  assert.deepEqual(st("=={font-a}«x»=="), { font: "a", mixed: false, codeOnly: false, fontable: true });
+  assert.deepEqual(st("«=={font-a}x== =={font-b}y==»"), { font: null, mixed: true, codeOnly: false, fontable: true });
+  // The text's font counts, not the code it skipped.
+  assert.deepEqual(st("=={font-inter}«see ==`x`=={font-inter} here»=="), { font: "inter", mixed: false, codeOnly: false, fontable: true });
+  assert.deepEqual(st("«`x`»"), { font: null, mixed: false, codeOnly: true, fontable: true });
+  assert.deepEqual(st("```font-a\n«x»\n```"), { font: "a", mixed: false, codeOnly: true, fontable: true });
+  assert.deepEqual(st("```font-a\nx‸\n```", true), { font: "a", mixed: false, codeOnly: true, fontable: true });
+  assert.deepEqual(st("«![](a7p2xq9d.png)»"), { font: null, mixed: false, codeOnly: false, fontable: false });
+  // A cursor in a block is a target for the pinned bar.
+  const { text, from, to } = sel("```\nx‸\n```");
+  assert.equal(formatState(formatCtx(text), from, to, true).hasTarget, true);
+});

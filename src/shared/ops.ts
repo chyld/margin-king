@@ -12,15 +12,16 @@ import {
   mapThrough,
   sameVisible,
   serializeRows,
-  setStyle3,
+  setStyle,
   splitLinksAtStyleBoundaries,
+  UNSTYLED,
   type Change,
   type LinkRef,
   type Row,
   type VChar,
 } from "./model.ts";
 import { DEFAULT_SECTION_COLOR, isColor } from "./palette.ts";
-import { CLOSE_FENCE_RE, type Line } from "./syntax.ts";
+import { CLOSE_FENCE_RE, withFenceFont, type Line } from "./syntax.ts";
 import { lineVisibleText } from "./text.ts";
 
 export interface FormatCtx {
@@ -36,7 +37,16 @@ export type FormatOp =
   | { type: "clear" }
   | { type: "code" }
   | { type: "section" }
-  | { type: "link"; url: string };
+  | { type: "link"; url: string }
+  | FontOp;
+
+/** A font (architecture §15, Fonts); `font: null` is Default. `mono` says whether it's a monospace
+ *  font, the only kind code takes. */
+export interface FontOp {
+  type: "font";
+  font: string | null;
+  mono: boolean;
+}
 
 export type Refusal = "cant" | "select";
 
@@ -51,10 +61,17 @@ export interface FormatState {
   section: boolean;
   link: string | null;
   color: string | null;
-  /** Everything but `</>` is disabled (inside a code block, or nothing formattable). */
+  /** Everything but `</>` and the font is disabled (inside a code block, or nothing formattable). */
   onlyCode: boolean;
   sectionDisabled: boolean;
   hasTarget: boolean;
+  /** The font of the target's text, or of its code for a `codeOnly` target; null if none has one. */
+  font: string | null;
+  fontMixed: boolean;
+  /** The target has no text characters, only inline code and/or code blocks. */
+  codeOnly: boolean;
+  /** Something in the target can take a font. */
+  fontable: boolean;
 }
 
 export function formatCtx(text: string): FormatCtx {
@@ -133,6 +150,7 @@ function linkRun(cs: VChar[], at: number): VChar[] {
 export function formatState(ctx: FormatCtx, from: number, to: number, pinned: boolean): FormatState {
   const target = resolveTarget(ctx, from, to, pinned);
   const line = lineAt(ctx.a, from);
+  const fonts = fontTarget(ctx, from, to, pinned);
   const state: FormatState = {
     bold: false,
     underline: false,
@@ -142,8 +160,24 @@ export function formatState(ctx: FormatCtx, from: number, to: number, pinned: bo
     color: null,
     onlyCode: false,
     sectionDisabled: !isRichLine(line),
-    hasTarget: !!target,
+    // A cursor in a code block is a target too, for `</>` and the font.
+    hasTarget: !!target || (pinned && isBlockLine(line)),
+    font: null,
+    fontMixed: false,
+    codeOnly: false,
+    fontable: false,
   };
+  if (fonts) {
+    const cs = fonts.p.targets.flat();
+    const text = cs.filter((c) => !c.style.code);
+    state.codeOnly = !text.length && (cs.length > 0 || fonts.blocks.length > 0);
+    state.fontable = cs.length > 0 || fonts.blocks.length > 0;
+    const seen = new Set<string | null>(
+      text.length ? text.map((c) => c.style.font) : [...cs.map((c) => c.style.font), ...fonts.blocks.map((b) => ctx.a.doc.blocks[b].font)],
+    );
+    state.font = seen.size === 1 ? [...seen][0] : null;
+    state.fontMixed = seen.size > 1;
+  }
   const range = target ?? { from, to };
   const { lines, targets } = prepare(ctx, range.from, Math.max(range.to, range.from));
   if (lines.some(isBlockLine) || !lines.some(isRichLine)) state.onlyCode = true;
@@ -230,6 +264,7 @@ function regionOf(ctx: FormatCtx, p: Prepared): { rows: Row[]; from: number; to:
 
 export function applyFormat(ctx: FormatCtx, from: number, to: number, op: FormatOp, pinned = false): FormatResult {
   if (op.type === "section") return section(ctx, from, to);
+  if (op.type === "font") return applyFont(ctx, from, to, op, pinned);
   if (op.type === "code") {
     const lines = linesIn(ctx, from, Math.max(from, to));
     if (lines.some(isBlockLine)) return unwrapBlocks(ctx, lines, from, to);
@@ -283,11 +318,11 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
     const heading = line.kind === "heading";
     switch (op.type) {
       case "bold": {
-        for (const c of targets) setStyle3(c, { color: c.style.color, b: boldOn, u: c.style.u });
+        for (const c of targets) setStyle(c, { b: boldOn });
         break;
       }
       case "underline": {
-        for (const c of targets) setStyle3(c, { color: c.style.color, b: c.style.b, u: underlineOn });
+        for (const c of targets) setStyle(c, { u: underlineOn });
         break;
       }
       case "color": {
@@ -297,18 +332,18 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
           if (line.color === op.color) return;
           row.prefix = `## {${op.color}} `;
           row.prefixRaw = -1;
-          for (const c of chars(row)) setStyle3(c, { color: null, b: c.style.b, u: c.style.u });
+          for (const c of chars(row)) setStyle(c, { color: null });
           return;
         }
-        for (const c of targets) setStyle3(c, { color: removeColor ? null : op.color, b: c.style.b, u: c.style.u });
+        for (const c of targets) setStyle(c, { color: removeColor ? null : op.color });
         break;
       }
       case "removeColor":
-        for (const c of targets) setStyle3(c, { color: null, b: c.style.b, u: c.style.u });
+        for (const c of targets) setStyle(c, { color: null });
         break;
       case "clear":
         for (const c of targets) {
-          setStyle3(c, { color: null, b: false, u: false });
+          setStyle(c, UNSTYLED);
           c.style = { ...c.style, code: false };
           c.codeId = -1;
         }
@@ -360,6 +395,96 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
     if (still) return { ok: false, reason: "cant" };
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fonts (architecture §15, Fonts)
+
+interface FontTarget {
+  p: Prepared;
+  /** Indexes of the code blocks it touches. */
+  blocks: number[];
+  word: boolean;
+}
+
+/** What a font applies to: the selection's text and the blocks it touches; with the bar pinned and
+ *  nothing selected, the word at the cursor, or the block the cursor is in. */
+function fontTarget(ctx: FormatCtx, from: number, to: number, pinned: boolean): FontTarget | null {
+  if (to > from) {
+    const blocks = [...new Set(linesIn(ctx, from, to).filter(isBlockLine).map((l) => l.block!))];
+    return { p: prepare(ctx, from, to), blocks, word: false };
+  }
+  if (!pinned) return null;
+  const line = lineAt(ctx.a, from);
+  if (isBlockLine(line)) return { p: prepare(ctx, from, from), blocks: [line.block!], word: false };
+  const word = resolveTarget(ctx, from, to, pinned);
+  return word ? { p: prepare(ctx, word.from, word.to), blocks: [], word: true } : null;
+}
+
+/** One line's text replaced by `next`, as the smallest change. */
+function lineEdit(line: Line, next: string): Change {
+  const old = line.text;
+  let pre = 0;
+  while (pre < old.length && pre < next.length && old[pre] === next[pre]) pre++;
+  let suf = 0;
+  while (suf < old.length - pre && suf < next.length - pre && old[old.length - 1 - suf] === next[next.length - 1 - suf]) suf++;
+  return { from: line.from + pre, to: line.to - suf, insert: next.slice(pre, next.length - suf) };
+}
+
+/**
+ * A font on everything in the target it's allowed on: text takes any font; inline code and code
+ * blocks only a monospace one. Default (null) removes the font from all of them.
+ */
+function applyFont(ctx: FormatCtx, from: number, to: number, op: FontOp, pinned: boolean): FormatResult {
+  const t = fontTarget(ctx, from, to, pinned);
+  if (!t) return { ok: false, reason: "select" };
+  const all = t.p.targets.flat();
+  if (!all.length && !t.blocks.length) return { ok: false, reason: "select" };
+  const takes = (c: VChar) => op.font === null || op.mono || !c.style.code;
+  const blocksTake = op.font === null || op.mono;
+  if (!all.some(takes) && !(blocksTake && t.blocks.length)) return { ok: false, reason: "cant" };
+
+  // Text and inline code: the usual serialize-and-verify path.
+  let textChanges: Change[] = [];
+  let caret: { anchor: number; head: number } | null = null;
+  if (all.length) {
+    for (const c of all) if (takes(c)) setStyle(c, { font: op.font });
+    for (const row of t.p.rows) if (row) splitLinksAtStyleBoundaries(row);
+    markSelection(t.p);
+    const region = regionOf(ctx, t.p);
+    const result = finish(ctx, t.p, region.rows, region.from, region.to, t.word);
+    if (!result.ok) return result;
+    textChanges = result.changes;
+    caret = { anchor: result.anchor, head: result.head };
+  }
+
+  // Code blocks: the font word on each opening fence.
+  const fenceChanges: Change[] = [];
+  if (blocksTake) {
+    for (const id of t.blocks) {
+      const open = ctx.a.doc.lines[ctx.a.doc.blocks[id].open];
+      const next = withFenceFont(open.text, op.font);
+      if (next !== open.text) fenceChanges.push(lineEdit(open, next));
+    }
+  }
+  const changes = [...textChanges, ...fenceChanges].sort((x, y) => x.from - y.from);
+  if (fenceChanges.length) {
+    // Line kinds and block pairings are unchanged, and each block has the font intended.
+    const after = analyze(applyChanges(ctx.text, changes));
+    if (!kindsMatch(ctx.a, after, () => null)) return { ok: false, reason: "cant" };
+    for (const id of t.blocks) {
+      const b = after.doc.lines[ctx.a.doc.blocks[id].open].block;
+      if (b === undefined || after.doc.blocks[b].font !== op.font) return { ok: false, reason: "cant" };
+    }
+  }
+
+  // The same text stays selected (README §3.6): ends on text lines from the serializer's carets,
+  // ends in code or fence lines mapped through the changes.
+  const fence1 = fenceChanges.map((c) => ({ ...c, from: mapThrough(c.from, textChanges), to: mapThrough(c.to, textChanges) }));
+  if (t.word && caret) return { ok: true, changes, anchor: caret.anchor, head: caret.head };
+  const end = (pos: number, fromCaret: number | undefined) =>
+    mapThrough(fromCaret !== undefined && isRichLine(lineAt(ctx.a, pos)) ? fromCaret : mapThrough(pos, textChanges), fence1);
+  return { ok: true, changes, anchor: end(from, caret?.anchor), head: end(to, caret?.head) };
 }
 
 function section(ctx: FormatCtx, from: number, to: number): FormatResult {

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { login, newNoteWith, newNoteWithShot } from "./helpers.ts";
+import { login, newNoteWith, newNoteWithShot, raw, select } from "./helpers.ts";
 
 test("phone: the drawer opens with no note, closes when a note opens", async ({ page }) => {
   await login(page);
@@ -44,6 +44,11 @@ async function finger(page: Page) {
     async tap(x: number, y: number) {
       await send("touchStart", x, y);
       await send("touchEnd", x, y);
+    },
+    async swipe(x: number, y: number, dy: number) {
+      await send("touchStart", x, y);
+      for (let i = 1; i <= 8; i++) await send("touchMove", x, y + (dy * i) / 8);
+      await send("touchEnd", x, y + dy);
     },
   };
 }
@@ -105,4 +110,24 @@ test("phone: on a tall screenshot the handle shows where the image was tapped (D
   const box = (await page.locator(".cm-shot-handle").boundingBox())!;
   expect(box.y + box.height).toBeLessThan(page.viewportSize()!.height);
   expect(Math.abs(box.y + box.height / 2 - (imgBox.y + 80))).toBeLessThan(16);
+});
+
+test("phone: in the font list a tap picks a font, and a swipe scrolls it without picking one (architecture §15)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await expect(page.locator(".fmt-popup")).toHaveClass(/is-docked/);
+  await page.locator(".fmt-popup .fmt-font").tap();
+  const list = page.locator(".fmt-font-list");
+  await expect(list).toBeVisible();
+  const f = await finger(page);
+  const box = (await list.boundingBox())!;
+  await f.swipe(box.x + box.width / 2, box.y + box.height - 12, -70);
+  await expect.poll(() => list.evaluate((l) => l.scrollTop)).toBeGreaterThan(0);
+  expect(await raw(page)).toBe("x word y");
+  await expect(list).toBeVisible();
+  const item = (await page.locator(".fmt-font-item", { hasText: "Liberation Serif" }).boundingBox())!;
+  await f.tap(item.x + item.width / 2, item.y + item.height / 2);
+  await expect.poll(() => raw(page)).toBe("x =={font-liberation-serif}word== y");
+  await expect(list).toBeHidden();
 });

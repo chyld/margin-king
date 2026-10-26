@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiRoutes, COOKIE, sessionCookie, type Ctx, type Route } from "./api.ts";
 import { HttpError, json, parseCookies, securityHeaders, send, StaticFiles } from "./http.ts";
+import { loadFonts, type FontTable } from "./fonts.ts";
 import { home } from "./pages.ts";
 import { SessionStore } from "./sessions.ts";
 import { NoteStore } from "./store.ts";
@@ -18,6 +19,8 @@ export interface Config {
   host: string;
   production: boolean;
   publicDir: string;
+  /** The admin's font folders (architecture §15, Fonts); none if left out. */
+  fontsDir?: string;
 }
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -29,6 +32,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST || "0.0.0.0",
     production: env.NODE_ENV === "production",
     publicDir: resolve(env.PUBLIC_DIR || join(ROOT, "dist/public")),
+    fontsDir: resolve(env.FONTS_DIR || "./fonts"),
   };
 }
 
@@ -36,6 +40,7 @@ export interface App {
   server: Server;
   sessions: SessionStore;
   store: NoteStore;
+  fonts: FontTable;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
@@ -65,7 +70,8 @@ export async function createApp(config: Config): Promise<App> {
   const files = new StaticFiles(config.publicDir, config.production);
   await files.load();
   const hashes = new HashQueue();
-  const routes: Route[] = apiRoutes({ store, sessions, users, hashes });
+  const fonts = await loadFonts(config.fontsDir);
+  const routes: Route[] = apiRoutes({ store, sessions, users, hashes, fonts });
 
   const pruneTimer = setInterval(() => sessions.prune(users.all()), 60 * 60 * 1000);
   pruneTimer.unref();
@@ -116,7 +122,8 @@ export async function createApp(config: Config): Promise<App> {
       if (!m) continue;
       if (route.access === "user" && !user) throw new HttpError(401, "Not logged in");
       c.params = { ...(m.groups ?? {}) };
-      if (route.pattern.source.includes("images") && route.method === "GET") res.removeHeader("Cache-Control");
+      // Screenshots and fonts set their own caching.
+      if (route.cache) res.removeHeader("Cache-Control");
       await route.handler(c);
       return;
     }
@@ -146,6 +153,7 @@ export async function createApp(config: Config): Promise<App> {
     server,
     sessions,
     store,
+    fonts,
     listen: () =>
       new Promise((resolveListen, reject) => {
         server.once("error", reject);

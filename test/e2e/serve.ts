@@ -25,6 +25,7 @@ const app = await createApp({
   host: "127.0.0.1",
   production: true,
   publicDir: resolve(import.meta.dirname, "../../dist/public"),
+  fontsDir: resolve(import.meta.dirname, "../fixtures/fonts"),
 });
 await app.listen();
 console.log(`e2e server on ${process.env.E2E_PORT}, data in ${dataDir}`);

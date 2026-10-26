@@ -31,7 +31,7 @@ function caretFenceLines(state: EditorState): Set<number> {
   return out;
 }
 
-function inlineMarks(tokens: Token[], base: number, inHeading: boolean, out: Range<Decoration>[], inHl = false): void {
+function inlineMarks(tokens: Token[], base: number, inHeading: boolean, out: Range<Decoration>[], hl: Token | null = null): void {
   for (const t of tokens) {
     const a = base + t.contentFrom;
     const b = base + t.contentTo;
@@ -40,10 +40,15 @@ function inlineMarks(tokens: Token[], base: number, inHeading: boolean, out: Ran
       if (t.opts!.color && !inHeading) cls.push("cm-hl-color", `hl-${t.opts!.color}`);
       if (t.opts!.b) cls.push("cm-hl-b");
       if (t.opts!.u) cls.push("cm-hl-u");
+      // Fonts (architecture §15): classes from the syntax alone; only installed fonts have rules.
+      if (t.opts!.font) cls.push("cm-hl-font", `ff-${t.opts!.font}`);
       if (a < b) out.push(Decoration.mark({ class: cls.join(" ") }).range(a, b));
-      inlineMarks(t.children ?? [], base, inHeading, out, true);
+      inlineMarks(t.children ?? [], base, inHeading, out, t);
     } else if (t.type === "code") {
-      if (a < b) out.push(Decoration.mark({ class: inHl ? "cm-code cm-code-inhl" : "cm-code" }).range(a, b));
+      const cls = hl ? ["cm-code", "cm-code-inhl"] : ["cm-code"];
+      // Code shows the highlight's font only if it's monospace (the generated CSS decides).
+      if (hl?.opts!.font) cls.push(`ff-${hl.opts!.font}`);
+      if (a < b) out.push(Decoration.mark({ class: cls.join(" ") }).range(a, b));
     } else if (a < b) {
       const mac = /Mac|iPhone|iPad/.test(navigator.platform);
       out.push(
@@ -94,12 +99,14 @@ function build(state: EditorState): RenderData {
       case "fence-open":
       case "fence-close": {
         lineClasses.push("cm-cb", line.kind === "fence-open" ? "cm-cb-open" : "cm-cb-close");
+        if (a.doc.blocks[line.block!].font) lineClasses.push(`ff-${a.doc.blocks[line.block!].font}`);
         if (!fences.has(line.index)) lineClasses.push("cm-fence-hidden");
         if (line.kind === "fence-open") decos.push(Decoration.widget({ widget: new CopyWidget(line.block!), side: -1 }).range(line.from));
         break;
       }
       case "code":
         lineClasses.push("cm-cb", "cm-cb-body");
+        if (a.doc.blocks[line.block!].font) lineClasses.push(`ff-${a.doc.blocks[line.block!].font}`);
         break;
       case "image":
         lineClasses.push("cm-shot-line");

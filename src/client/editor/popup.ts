@@ -5,6 +5,7 @@ import { EditorView, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/vie
 import { HUES } from "../../shared/palette.ts";
 import { applyFormat, formatState, type FormatOp, type FormatState } from "../../shared/ops.ts";
 import { normalizeUrl } from "../../shared/rules.ts";
+import { fontById, installedFonts } from "../fonts.ts";
 import { analysisField, bypass } from "./fields.ts";
 
 export interface PopupHost {
@@ -20,7 +21,14 @@ const DEFAULT_HINT = "Enter applies · Esc closes";
 
 interface Cell {
   el: HTMLButtonElement;
-  op: () => FormatOp | "link";
+  op: () => FormatOp | "link" | "fonts";
+}
+
+/** An entry of the font list (architecture §15, Fonts); `font: null` is Default. */
+interface FontItem {
+  el: HTMLButtonElement;
+  font: string | null;
+  mono: boolean;
 }
 
 let lastPointer = "mouse";
@@ -43,6 +51,16 @@ class Popup {
   message = "";
   visible = false;
   state: FormatState | null = null;
+  /** The font list, shown in place of the swatches (architecture §15, Fonts). */
+  fontList: HTMLDivElement;
+  fontCell!: Cell;
+  listOpen = false;
+  /** The selection the list was opened for: any other closes it. */
+  listKey = "";
+  listItems: FontItem[] = [];
+  listFocus: number | null = null;
+  /** The entry the last pointer went down on: a click counts only there. */
+  downItem: Element | null = null;
   private onMouseUp = () => {
     if (!this.mouseDown) return;
     this.mouseDown = false;
@@ -66,6 +84,19 @@ class Popup {
     this.dom.hidden = true;
     this.hint = document.createElement("div");
     this.hint.className = "fmt-hint";
+    this.fontList = document.createElement("div");
+    this.fontList.className = "fmt-font-list";
+    this.fontList.setAttribute("role", "listbox");
+    this.fontList.setAttribute("aria-label", "Fonts");
+    this.fontList.hidden = true;
+    // Entries act on click, not pointerdown, so a swipe that scrolls the list doesn't pick a font.
+    // The click must also have started on that entry: opening the list moves things (a docked popup
+    // grows upward), and the click of the tap that opened it lands wherever the finger now is.
+    this.fontList.addEventListener("click", (e) => {
+      const el = (e.target as HTMLElement).closest("button");
+      const item = this.listItems.find((i) => i.el === el);
+      if (item && el === this.downItem) this.pickFont(item, false);
+    });
     this.buildButtons();
     document.body.appendChild(this.dom);
     view.contentDOM.addEventListener("mousedown", () => {
@@ -83,6 +114,7 @@ class Popup {
     this.dom.addEventListener("mousedown", (e) => e.preventDefault());
     this.dom.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      this.downItem = (e.target as HTMLElement).closest(".fmt-font-item");
       if (e.button !== 0) return;
       const btn = (e.target as HTMLElement).closest("button");
       if (!btn || btn.disabled) return;
@@ -109,8 +141,11 @@ class Popup {
       this.button("Section", "fmt-section", "Section", () => ({ type: "section" })),
       this.button("Clear formatting", "fmt-clear wide", "Clear formatting", () => ({ type: "clear" })),
     ];
+    this.fontCell = this.button('<span class="fmt-aa" aria-hidden="true">Aa</span> Font', "fmt-font", "Font", () => "fonts");
+    this.fontCell.el.setAttribute("aria-expanded", "false");
     const row1 = [
       this.button('<svg aria-hidden="true"><use href="#i-link"/></svg> Link', "fmt-link", "Link", () => "link"),
+      this.fontCell,
       this.button("Remove color", "fmt-nocolor wide", "Remove color", () => ({ type: "removeColor" })),
     ];
     const light = HUES.map((h) => this.button("a", `fmt-swatch hl-${h.name}`, h.name, () => ({ type: "color", color: h.name })));
@@ -124,8 +159,93 @@ class Popup {
       div.className = rowClass[i];
       for (const c of row) div.appendChild(c.el);
       this.dom.appendChild(div);
+      if (i === 1) this.dom.appendChild(this.fontList);
     });
     this.dom.appendChild(this.hint);
+  }
+
+  /** The rows the focus ring moves over: hidden buttons skipped, and no swatches while the font
+   *  list is open. */
+  private ringRows(): Cell[][] {
+    const rows = this.listOpen ? this.rows.slice(0, 2) : this.rows;
+    return rows.map((r) => r.filter((c) => !c.el.hidden)).filter((r) => r.length);
+  }
+
+  private fontCellFocus(): [number, number] | null {
+    const rows = this.ringRows();
+    const c = rows[1]?.indexOf(this.fontCell) ?? -1;
+    return c >= 0 ? [1, c] : null;
+  }
+
+  private setList(open: boolean, keyboard = false): void {
+    if (this.listOpen === open) return;
+    this.listOpen = open;
+    this.listKey = this.selKey();
+    this.dom.classList.toggle("is-fonts", open);
+    this.fontList.hidden = !open;
+    this.fontCell.el.setAttribute("aria-expanded", String(open));
+    this.listFocus = null;
+    if (open) {
+      this.buildList();
+      // Opened from the keyboard, the ring moves into the list, onto the checked entry.
+      if (keyboard) {
+        this.listFocus = this.checkedItem();
+        this.focus = null;
+      }
+    }
+    this.paint();
+    this.position();
+    if (open) (this.listItems[this.listFocus ?? this.checkedItem()]?.el ?? null)?.scrollIntoView({ block: "nearest" });
+  }
+
+  private checkedItem(): number {
+    const i = this.listItems.findIndex((it) => it.el.classList.contains("is-current"));
+    return i >= 0 ? i : 0;
+  }
+
+  /** Default, a font the note names that isn't installed, then the monospace and other fonts, each
+   *  name in its own font. A code-only target lists only monospace fonts. */
+  private buildList(): void {
+    const st = this.state!;
+    const list = this.fontList;
+    list.replaceChildren();
+    this.listItems = [];
+    const current = st.fontMixed ? undefined : st.font;
+    const add = (label: string, font: string | null, mono: boolean, cls: string, disabled = false) => {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.tabIndex = -1;
+      el.className = `fmt-font-item ${cls}`.trim();
+      el.textContent = label;
+      el.disabled = disabled;
+      el.setAttribute("role", "option");
+      const on = current !== undefined && current === font;
+      el.classList.toggle("is-current", on);
+      el.setAttribute("aria-selected", String(on));
+      list.appendChild(el);
+      if (!disabled) this.listItems.push({ el, font, mono });
+    };
+    add("Default", null, false, "");
+    if (st.font && !st.fontMixed && !fontById(st.font)) add(`${st.font} (not installed)`, st.font, false, "is-missing", true);
+    const group = (title: string, mono: boolean) => {
+      const fonts = installedFonts().filter((f) => f.mono === mono);
+      if (!fonts.length) return;
+      const head = document.createElement("div");
+      head.className = "fmt-font-head";
+      head.textContent = title;
+      list.appendChild(head);
+      for (const f of fonts) add(f.name, f.id, f.mono, `ff-${f.id}`);
+    };
+    group("Monospace", true);
+    if (!st.codeOnly) group("Other", false);
+  }
+
+  private pickFont(item: FontItem, keyboard: boolean): void {
+    if (this.apply({ type: "font", font: item.font, mono: item.mono })) {
+      this.setList(false);
+      if (keyboard) this.focus = this.fontCellFocus();
+      this.paint();
+    }
   }
 
   private selection() {
@@ -173,6 +293,12 @@ class Popup {
     this.dom.hidden = true;
     this.visible = false;
     this.focus = null;
+    if (this.listOpen) {
+      this.listOpen = false;
+      this.dom.classList.remove("is-fonts");
+      this.fontList.hidden = true;
+      this.fontCell.el.setAttribute("aria-expanded", "false");
+    }
   }
 
   private paint(): void {
@@ -188,14 +314,21 @@ class Popup {
     set(row0[3], st.section, st.onlyCode || st.sectionDisabled);
     set(row0[4], false, st.onlyCode);
     set(row1[0], !!st.link, st.onlyCode);
-    set(row1[1], false, st.onlyCode);
+    // Font: shown when fonts are installed, or the target's font isn't (so it can be removed).
+    const missing = !!st.font && !fontById(st.font);
+    row1[1].el.hidden = !installedFonts().length && !missing;
+    set(row1[1], !!st.font && !st.fontMixed, !st.fontable);
+    set(row1[2], false, st.onlyCode);
     [...light, ...deep].forEach((c, i) => {
       const name = i < 12 ? HUES[i].name : `${HUES[i - 12].name}-deep`;
       c.el.classList.toggle("is-current", st.color === name);
       c.el.disabled = st.onlyCode;
     });
     this.rows.flat().forEach((c) => c.el.classList.remove("is-focus"));
-    if (this.focus) this.rows[this.focus[0]][this.focus[1]].el.classList.add("is-focus");
+    const ring = this.ringRows();
+    if (this.focus && !ring[this.focus[0]]?.[this.focus[1]]) this.focus = null;
+    if (this.focus) ring[this.focus[0]][this.focus[1]].el.classList.add("is-focus");
+    this.listItems.forEach((it, i) => it.el.classList.toggle("is-focus", i === this.listFocus));
     const compact = window.matchMedia("(max-width: 760px)").matches;
     this.dom.classList.toggle("is-compact", compact);
     // README §3.6: with no word at the cursor, the hint says so before anything is clicked.
@@ -257,10 +390,13 @@ class Popup {
   }
   private messageTimer = 0;
 
-  activate(cell: Cell): void {
+  activate(cell: Cell, keyboard = false): void {
     const view = this.view;
-    const sel = this.selection();
     let op = cell.op();
+    if (op === "fonts") {
+      this.setList(!this.listOpen, keyboard);
+      return;
+    }
     if (op === "link") {
       const st = this.state;
       const answer = window.prompt("Link address", st?.link ?? "");
@@ -276,11 +412,19 @@ class Popup {
       }
       view.focus();
     }
+    this.apply(op);
+  }
+
+  /** Apply an option; false if it was refused (the hint says why). */
+  private apply(op: FormatOp): boolean {
+    const view = this.view;
+    const sel = this.selection();
     const result = applyFormat(this.ctx(), sel.from, sel.to, op, this.pinned);
     if (!result.ok) {
       this.say(result.reason === "select" ? "Select some text first" : "Can't apply that here");
-      return;
+      return false;
     }
+    if (op.type === "font") this.setList(false);
     const focus = this.focus;
     view.dispatch({
       changes: result.changes,
@@ -293,11 +437,16 @@ class Popup {
     this.focus = focus;
     this.escKey = "";
     this.refresh();
+    return true;
   }
 
   update(u: ViewUpdate): void {
+    // Another selection closes the font list (a font finishing loading sets the same one again).
+    if (this.listOpen && (u.selectionSet || u.docChanged) && this.listKey !== this.selKey()) this.setList(false);
     if (u.selectionSet && this.escKey && this.escKey !== this.selKey()) this.escKey = "";
-    if (u.selectionSet && !this.pinned) this.focus = null;
+    // Only a selection that moved drops the ring (a font finishing loading sets the same one again).
+    const [s0, s1] = [u.startState.selection.main, u.state.selection.main];
+    if (u.selectionSet && (s0.from !== s1.from || s0.to !== s1.to) && !this.pinned) this.focus = null;
     if (u.selectionSet || u.docChanged || u.focusChanged || u.viewportChanged || u.geometryChanged || u.transactions.some((t) => t.reconfigured)) {
       this.refresh();
     }
@@ -308,6 +457,13 @@ class Popup {
     if (!this.visible) return false;
     const sel = this.selection();
     if (name === "Escape") {
+      if (this.listOpen) {
+        // Back to the swatches, with the ring on the Font button.
+        this.setList(false);
+        this.focus = this.fontCellFocus();
+        this.paint();
+        return true;
+      }
       if (this.pinned) this.setPinned(false);
       else {
         this.escKey = this.selKey();
@@ -317,22 +473,39 @@ class Popup {
     }
     // With the bar pinned and nothing selected, the arrows and Enter go to the note.
     if (this.pinned && sel.empty) return false;
+    // The font list: Up and Down move through its entries, Enter picks one.
+    if (this.listOpen && (name === "ArrowUp" || name === "ArrowDown" || (this.listFocus !== null && name !== "Escape"))) {
+      if (name === "Enter" && this.listFocus !== null) {
+        this.pickFont(this.listItems[this.listFocus], true);
+        return true;
+      }
+      if (name === "ArrowUp" || name === "ArrowDown") {
+        const last = this.listItems.length - 1;
+        if (this.listFocus === null) this.listFocus = this.checkedItem();
+        else this.listFocus = Math.max(0, Math.min(last, this.listFocus + (name === "ArrowDown" ? 1 : -1)));
+        this.focus = null;
+        this.paint();
+        this.listItems[this.listFocus]?.el.scrollIntoView({ block: "nearest" });
+      }
+      return true;
+    }
+    const rows = this.ringRows();
     if (name === "Enter") {
       if (!this.focus) return false;
-      this.activate(this.rows[this.focus[0]][this.focus[1]]);
+      this.activate(rows[this.focus[0]][this.focus[1]], true);
       return true;
     }
     if (!this.focus) {
       this.focus = [0, 0];
     } else {
       let [r, c] = this.focus;
-      if (name === "ArrowRight") c = Math.min(c + 1, this.rows[r].length - 1);
+      if (name === "ArrowRight") c = Math.min(c + 1, rows[r].length - 1);
       else if (name === "ArrowLeft") c = Math.max(c - 1, 0);
       else if (name === "ArrowDown" || name === "ArrowUp") {
-        const nr = name === "ArrowDown" ? Math.min(r + 1, this.rows.length - 1) : Math.max(r - 1, 0);
+        const nr = name === "ArrowDown" ? Math.min(r + 1, rows.length - 1) : Math.max(r - 1, 0);
         // Keep roughly the same horizontal position between rows of different lengths.
-        const frac = this.rows[r].length > 1 ? c / (this.rows[r].length - 1) : 0;
-        c = Math.round(frac * (this.rows[nr].length - 1));
+        const frac = rows[r].length > 1 ? c / (rows[r].length - 1) : 0;
+        c = Math.round(frac * (rows[nr].length - 1));
         r = nr;
       }
       this.focus = [r, c];

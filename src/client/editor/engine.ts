@@ -112,7 +112,13 @@ function templateAt(ctx: Ctx, row: Row, line: Line, pos: number): Template | nul
   const codeChar = enc.code ? charIn(row, line, enc.code) : undefined;
   const linkChar = enc.link ? charIn(row, line, enc.link) : undefined;
   return {
-    style: { color: enc.hl?.opts?.color ?? null, b: enc.hl?.opts?.b ?? false, u: enc.hl?.opts?.u ?? false, code: !!codeChar },
+    style: {
+      color: enc.hl?.opts?.color ?? null,
+      b: enc.hl?.opts?.b ?? false,
+      u: enc.hl?.opts?.u ?? false,
+      font: enc.hl?.opts?.font ?? null,
+      code: !!codeChar,
+    },
     hl: hlChar?.hl ?? null,
     codeId: codeChar?.codeId ?? -1,
     link: linkChar?.link ?? null,

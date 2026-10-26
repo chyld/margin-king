@@ -9,6 +9,8 @@ export interface Opts {
   color: string | null;
   b: boolean;
   u: boolean;
+  /** A font id (architecture §15, Fonts), installed or not. */
+  font: string | null;
 }
 
 export type TokenType = "hl" | "code" | "link" | "url";
@@ -54,6 +56,8 @@ export interface Block {
   /** Line indexes of the opening and closing fences. */
   open: number;
   close: number;
+  /** The `font-<id>` word in the opening fence's info string (architecture §15, Fonts). */
+  font: string | null;
 }
 
 export interface Section {
@@ -78,17 +82,33 @@ const LINK_RE = /^\[([^\]\n]+)\]\((https?:\/\/[^\s<>()[\]`]+)\)/;
 const URL_RE = /^https?:\/\/[^\s<>()[\]`]+/;
 const URL_TRAILING = /[.,;:!?'"*_~=]+$/;
 const HL_OPEN_RE = /^==\{([a-z0-9+-]+)\}/;
+/** A font id: what a `font-<id>` option or fence word names (architecture §15, Fonts). */
+const FONT_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const MAX_FONT_ID = 48;
+
+export function isFontId(id: string): boolean {
+  return id.length <= MAX_FONT_ID && FONT_ID_RE.test(id);
+}
+
+/** `font-inter` → `inter`; null if the word isn't a font option. */
+export function fontWord(word: string): string | null {
+  return word.startsWith("font-") && isFontId(word.slice(5)) ? word.slice(5) : null;
+}
 
 /** Margin always writes `\n`; text copied in from elsewhere may have `\r\n` or `\r`. */
 export function normalizeNewlines(text: string): string {
   return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
 }
 
-/** `lime+b+u` → options, or null if invalid (an unknown or repeated option, an empty part). */
+/** `lime+b+u+font-inter` → options, or null if invalid (an unknown or repeated option, an empty part). */
 export function parseOptions(text: string): Opts | null {
-  const opts: Opts = { color: null, b: false, u: false };
+  const opts: Opts = { color: null, b: false, u: false, font: null };
   for (const part of text.split("+")) {
-    if (part === "b") {
+    const font = fontWord(part);
+    if (font) {
+      if (opts.font) return null;
+      opts.font = font;
+    } else if (part === "b") {
       if (opts.b) return null;
       opts.b = true;
     } else if (part === "u") {
@@ -104,17 +124,38 @@ export function parseOptions(text: string): Opts | null {
   return opts;
 }
 
-/** Options as Margin writes them: color, then `b`, then `u`. */
+/** Options as Margin writes them: color, then `b`, then `u`, then the font. */
 export function serializeOptions(opts: Opts): string {
   const parts: string[] = [];
   if (opts.color) parts.push(opts.color);
   if (opts.b) parts.push("b");
   if (opts.u) parts.push("u");
+  if (opts.font) parts.push(`font-${opts.font}`);
   return parts.join("+");
 }
 
 export function sameOpts(a: Opts, b: Opts): boolean {
-  return a.color === b.color && a.b === b.b && a.u === b.u;
+  return a.color === b.color && a.b === b.b && a.u === b.u && a.font === b.font;
+}
+
+/** A code block's font: the first `font-<id>` word of the opening fence's info string (the text
+ *  after its first three backticks). */
+export function fenceFont(text: string): string | null {
+  for (const word of text.slice(3).split(/\s+/)) {
+    const font = fontWord(word);
+    if (font) return font;
+  }
+  return null;
+}
+
+/** The opening fence with its font set (or removed, for null): every font word goes, with the
+ *  whitespace before it, and the new one is added after the rest of the info string. */
+export function withFenceFont(text: string, font: string | null): string {
+  const head = text.slice(0, 3);
+  let info = text.slice(3).replace(/(^|\s+)(\S+)/g, (all, _space: string, word: string) => (fontWord(word) ? "" : all));
+  if (font === null) return head + info;
+  info = info.replace(/\s+$/, "");
+  return `${head}${info}${info ? " " : ""}font-${font}`;
 }
 
 /** A heading's color and prefix length, or null if the line isn't a heading. */
@@ -160,7 +201,7 @@ export function parseDoc(input: string): Doc {
     while (j < lines.length && !CLOSE_FENCE_RE.test(lines[j].text)) j++;
     if (j >= lines.length) break;
     const block = blocks.length;
-    blocks.push({ open: i, close: j });
+    blocks.push({ open: i, close: j, font: fenceFont(lines[i].text) });
     lines[i].kind = "fence-open";
     lines[j].kind = "fence-close";
     lines[i].block = lines[j].block = block;

@@ -10,7 +10,7 @@ RUN npm run build
 
 FROM node:26-alpine
 WORKDIR /app
-ENV NODE_ENV=production DATA_DIR=/data PORT=5555
+ENV NODE_ENV=production DATA_DIR=/data PORT=5555 FONTS_DIR=/fonts
 COPY package.json ./
 COPY src/server ./src/server
 COPY src/shared ./src/shared

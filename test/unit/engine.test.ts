@@ -286,3 +286,21 @@ test("edits widen to whole graphemes; no lone surrogate is written (DeepSeek r1 
   const rich = "=={b}a😀b==";
   assert.equal(show(rich, deleteRange(ctxOf(rich), 7, 8)), "=={b}a‸b==");
 });
+
+test("fonts: typing, Enter, paste and edits keep a font (architecture §15, Fonts)", () => {
+  assert.equal(type("=={font-inter}word‸==", "s"), "=={font-inter}words‸==");
+  assert.equal(type("=={font-inter}‸word==", "s"), "=={font-inter}s‸word==");
+  assert.equal(type("=={lime+font-inter}wo‸rd==", "x"), "=={lime+font-inter}wox‸rd==");
+  assert.equal(type("=={font-inter}x ‸==", "="), "=={font-inter}x ===‸");
+  assert.equal(ent("=={font-inter}wo‸rd=="), "=={font-inter}wo==\n=={font-inter}‸rd==");
+  assert.equal(type("=={font-inter}a‸b==", "XY", "paste"), "=={font-inter}aXY‸b==");
+  assert.equal(bs("=={font-inter}ab‸=="), "=={font-inter}a‸==");
+  assert.equal(bs("=={font-inter}a‸=="), "‸");
+  const { text, from } = parse("=={font-a}x==‸y");
+  assert.equal(show(text, transpose(ctxOf(text), from)), "y=={font-a}x‸==");
+  const cp = (s2: string) => {
+    const p2 = parse(s2);
+    return copyText(ctxOf(p2.text), p2.from, p2.to);
+  };
+  assert.equal(cp("=={font-inter}w«or»d=="), "=={font-inter}or==");
+});

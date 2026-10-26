@@ -11,8 +11,13 @@ export interface Style {
   color: string | null;
   b: boolean;
   u: boolean;
+  /** A font id (architecture §15, Fonts), installed or not. */
+  font: string | null;
   code: boolean;
 }
+
+/** The parts of a style a highlight writes: everything but `code`. */
+export type HlStyle = Omit<Style, "code">;
 
 /** The original highlight a character came from, so its marker bytes can be kept. */
 export interface HlSrc {
@@ -69,7 +74,7 @@ export interface Row {
   items: Item[];
 }
 
-export const PLAIN: Style = Object.freeze({ color: null, b: false, u: false, code: false });
+export const PLAIN: Style = Object.freeze({ color: null, b: false, u: false, font: null, code: false });
 
 let idSeq = 1;
 export function freshId(): number {
@@ -89,7 +94,13 @@ function makeChar(ch: string, raw: number, hl: HlSrc | null, codeId: number, lin
     kind: "char",
     ch,
     raw,
-    style: { color: hl?.opts.color ?? null, b: hl?.opts.b ?? false, u: hl?.opts.u ?? false, code: codeId >= 0 },
+    style: {
+      color: hl?.opts.color ?? null,
+      b: hl?.opts.b ?? false,
+      u: hl?.opts.u ?? false,
+      font: hl?.opts.font ?? null,
+      code: codeId >= 0,
+    },
     hl,
     codeId,
     link,
@@ -163,17 +174,24 @@ export function newChars(text: string, like: Pick<VChar, "style" | "hl" | "codeI
   return out;
 }
 
-export function sameStyle3(a: Style, b: Style): boolean {
-  return a.color === b.color && a.b === b.b && a.u === b.u;
+/** Same highlight options: color, bold, underline and font (code is a token of its own). */
+export function sameStyle(a: HlStyle, b: HlStyle): boolean {
+  return a.color === b.color && a.b === b.b && a.u === b.u && a.font === b.font;
 }
 
-function styled(s: Style): boolean {
-  return s.color !== null || s.b || s.u;
+/** Whether characters with this style need a highlight around them. */
+function styled(s: HlStyle): boolean {
+  return s.color !== null || s.b || s.u || s.font !== null;
 }
 
-export function setStyle3(c: VChar, s: { color: string | null; b: boolean; u: boolean }): void {
-  if (c.style.color === s.color && c.style.b === s.b && c.style.u === s.u) return;
-  c.style = { ...c.style, color: s.color, b: s.b, u: s.u };
+/** No color, bold, underline or font: what an `=` that must stay out of a highlight gets. */
+export const UNSTYLED: HlStyle = Object.freeze({ color: null, b: false, u: false, font: null });
+
+/** Change some of a character's highlight options; a changed character leaves its original highlight. */
+export function setStyle(c: VChar, s: Partial<HlStyle>): void {
+  const next = { ...c.style, ...s };
+  if (sameStyle(next, c.style)) return;
+  c.style = next;
   c.hl = null;
 }
 
@@ -219,7 +237,7 @@ interface Run {
   end: number;
 }
 
-/** Highlight runs: equal (color, b, u), and never two different original highlights merged. */
+/** Highlight runs: equal (color, b, u, font), and never two different original highlights merged. */
 export function groupRuns(cs: VChar[]): Run[] {
   const runs: Run[] = [];
   for (let i = 0; i < cs.length; i++) {
@@ -227,7 +245,7 @@ export function groupRuns(cs: VChar[]): Run[] {
     const cur = runs[runs.length - 1];
     if (
       cur &&
-      sameStyle3(cur.style, c.style) &&
+      sameStyle(cur.style, c.style) &&
       (!styled(c.style) || !c.hl || !cur.src || cur.src.id === c.hl.id)
     ) {
       cur.end = i + 1;
@@ -240,7 +258,7 @@ export function groupRuns(cs: VChar[]): Run[] {
 }
 
 function openingMarker(run: Run): string {
-  const opts: Opts = { color: run.style.color, b: run.style.b, u: run.style.u };
+  const opts: Opts = { color: run.style.color, b: run.style.b, u: run.style.u, font: run.style.font };
   if (run.src && sameOpts(run.src.opts, opts)) return `=={${run.src.optsText}}`;
   return `=={${serializeOptions(opts)}}`;
 }
@@ -501,7 +519,7 @@ export function sameVisible(a: VChar[], b: VChar[]): boolean {
     const x = a[i];
     const y = b[i];
     if (x.ch !== y.ch) return false;
-    if (!sameStyle3(x.style, y.style) || x.style.code !== y.style.code) return false;
+    if (!sameStyle(x.style, y.style) || x.style.code !== y.style.code) return false;
     if (!!x.link !== !!y.link) return false;
     if (x.link && y.link && (x.link.url !== y.link.url || x.link.form !== y.link.form)) return false;
     if (i > 0) {
@@ -525,12 +543,12 @@ export function fixEquals(row: Row): boolean {
     let end = run.end;
     while (end > run.start && cs[end - 1].ch === "=" && !cs[end - 1].link && !cs[end - 1].style.code) {
       end--;
-      setStyle3(cs[end], { color: null, b: false, u: false });
+      setStyle(cs[end], UNSTYLED);
       changed = true;
     }
     let start = run.start;
     while (start + 1 < end && cs[start].ch === "=" && cs[start + 1].ch === "=" && !cs[start].link && !cs[start].style.code) {
-      setStyle3(cs[start], { color: null, b: false, u: false });
+      setStyle(cs[start], UNSTYLED);
       start++;
       changed = true;
     }
