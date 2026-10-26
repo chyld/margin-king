@@ -1180,7 +1180,10 @@ logins, conflict detection on save, a "delete unused screenshots" action, and a 
 off render-mode protection for long notes.
 
 Changed from the README by the owner after the build (2026-10-25): the editor paper fills the main
-area's width instead of stopping at 920px (README §4.6); the trash banner matches it. The
+area's width instead of stopping at 920px (README §4.6); the trash banner matches it. Later
+(2026-10-26) the space around the text went too: no gutter, rounded edge or shadow around the paper
+(it's the whole area under the menu bar), and 12px inside it instead of 44 × 56px (22 × 18px on a
+phone), just so text and caret don't touch the window's edge. The
 favicon and logo icon (README §4.6) are redrawn: a white lowercase "m" on a smooth violet rounded
 square with a soft top sheen, and a small amber dot (`public/favicon.svg`, used by every page). The
 palette button's icon is a line-drawn highlighter over a coral → amber → mint → violet stroke,

@@ -643,14 +643,15 @@ button {
 
 /* ---- Banner, paper, empty state ---- */
 .trash-banner {
-  margin: 0 22px 10px;
+  margin: 0;
   align-self: center;
-  width: calc(100% - 44px);
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 12px 10px 16px;
-  border-radius: 12px;
+  border-radius: 0;
   background: linear-gradient(120deg, #fff1e6, #ffe4ee);
   color: #7a4334;
   font-weight: 600;
@@ -665,17 +666,15 @@ button {
 .paper-wrap {
   flex: 1;
   overflow: hidden;
-  padding: 0 22px 22px;
   display: flex;
   justify-content: center;
 }
-/* Full width of the main area (the owner's choice over README §4.6's 920px). */
+/* The whole main area under the menu bar, edge to edge, with no gutter or card edge around it (the
+   owner's choice over README §4.6's centered 920px card with 44 × 56px padding). */
 .paper {
   width: 100%;
   height: 100%;
-  border-radius: 18px;
   background: #fff;
-  box-shadow: var(--shadow-lg);
   overflow: hidden;
   display: flex;
 }
@@ -814,7 +813,8 @@ button {
   font-family: var(--mono);
   font-size: 14px;
   line-height: 1.7;
-  padding: 44px 56px;
+  /* Just enough that the text and caret don't touch the window edge. */
+  padding: 12px;
   overflow: auto;
   /* Raw syntax like == must show as typed, not as a ligature. */
   font-variant-ligatures: none;
@@ -1519,14 +1519,9 @@ body.glow {
     transform: translateX(30px);
   }
   .paper-wrap {
-    padding: 0 10px 10px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-  }
-  .paper {
-    border-radius: 14px;
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .editor .cm-scroller {
-    padding: 22px 18px;
     font-size: 16px;
   }
   .editor .font-prop.mode-render .cm-scroller {
