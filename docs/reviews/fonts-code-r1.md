@@ -97,3 +97,24 @@ review resize-r1, Sonnet #6), not a font problem.
 | 10 | The second read checks only the family | Already fixed (Muse #3) |
 | 11 | Windows symbol names rank ahead of Mac Roman | Already fixed (MiniMax #8) |
 | 12 | `document.fonts.check` passes with no faces | Already fixed (Sol #6) |
+
+## GLM-5.3 Flash — 6 findings (and about 50 adversarial probes of the operations and the reader)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | No `maxOutputLength` on either decompressor (a 421-byte stream became 256 MB) | Already fixed (Sol #1) |
+| 2 | Code alone in an installed "other" font: nothing is checked, not even Default | Already fixed (DeepSeek #5: listed as "(not for code)", checked) |
+| 3 | Opened from the keyboard, the ring skips a checked "(not installed)" entry and lands on Default | Already fixed (Grok #7) |
+| 4 | With the ring in the list, Left and Right do nothing: the ring is trapped | Fixed: Up from the first entry, Left or Right go back to the Font button (the list stays open); Down from the second button row goes in |
+| 5 | The no-fonts case isn't tested in the browser | Mostly already added (Sonnet #2: the button hidden with an empty list, and the ring skipping it in MiniMax #4's test); now the missing font is also removed there |
+| 6 | `formatState` prepares twice; `pickFont` closes the list `apply` already closed | The first already fixed (Sonnet #3); the redundant close removed |
+
+## Round 1 summary
+
+All eight reviewed. Fixed across seven commits: bounded reads and decompression, symlinked font
+folders, Mac Roman names, sanitized names, the second read checking the whole face, a block's
+selection kept, fonts the list can't offer shown, the list following the note and the font list
+arriving, the ring (an option, not a position; Enter and the arrows in the list), the fence's info
+string kept byte for byte, symbol names ranked last, `formatState` building its rows once, and
+stronger tests (real face loading, drawn ligatures, raw traversal paths, malformed files, mixed
+selections, the no-fonts case). No finding was declined.

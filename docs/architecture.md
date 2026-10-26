@@ -1445,9 +1445,11 @@ picked code fonts show their ligatures; a word in another font with no color get
     `click` and a swipe scrolls the list without one.
   - **Keyboard**: the Font button is in the ring's second row. Enter on it opens the list with the
     ring on the checked entry (or Default); Up and Down move through the entries (headings are
-    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button. If the
-    list was opened with the mouse, Enter moves the ring into it (onto the checked entry) rather
-    than editing the note. The ring remembers its option, not a position, so the Font button
+    skipped), Enter applies, Esc closes the list and puts the ring back on the Font button. The
+    list sits below the button rows: Down from the second row goes into it (onto the checked
+    entry), and Up from its first entry, Left or Right go back to the Font button, the list staying
+    open. If the list was opened with the mouse, Enter moves the ring into it rather than editing
+    the note. The ring remembers its option, not a position, so the Font button
     appearing when the list arrives doesn't move it. With the bar pinned and nothing selected, keys
     go to the note as before (§7.8).
   - Works in both modes (README §3.6): in raw mode picking a font writes the marker, which shows as

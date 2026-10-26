@@ -259,9 +259,9 @@ class Popup {
 
   private pickFont(item: FontItem, keyboard: boolean): void {
     if (item.disabled) return;
-    if (this.apply({ type: "font", font: item.font, mono: item.mono })) {
-      this.setList(false);
-      if (keyboard) this.focus = this.fontCellFocus();
+    // apply() closes the list; from the keyboard, the ring goes back to the Font button.
+    if (this.apply({ type: "font", font: item.font, mono: item.mono }) && keyboard) {
+      this.focus = this.fontCellFocus();
       this.paint();
     }
   }
@@ -497,31 +497,37 @@ class Popup {
     }
     // With the bar pinned and nothing selected, the arrows and Enter go to the note.
     if (this.pinned && sel.empty) return false;
-    // The font list: Up and Down move through its entries, Enter picks one.
-    if (this.listOpen && (name === "ArrowUp" || name === "ArrowDown" || (this.listFocus !== null && name !== "Escape"))) {
-      if (name === "Enter" && this.listFocus !== null) {
-        this.pickFont(this.listItems[this.listFocus], true);
+    const rows = this.ringRows();
+    // The font list, below the button rows. In it, Up and Down move, Enter picks, and Up from the
+    // first entry, Left or Right go back to the Font button. Down from the second button row (or the
+    // first arrow) goes into it, onto the checked entry, and so does Enter when it was opened with
+    // the mouse (rather than editing the note).
+    if (this.listOpen) {
+      if (this.listFocus !== null) {
+        if (name === "Enter") {
+          this.pickFont(this.listItems[this.listFocus], true);
+          return true;
+        }
+        if (name === "ArrowDown") this.listFocus = Math.min(this.listItems.length - 1, this.listFocus + 1);
+        else if (name === "ArrowUp" && this.listFocus > 0) this.listFocus--;
+        else {
+          this.listFocus = null;
+          this.focus = this.fontCellFocus();
+        }
+        this.paint();
+        if (this.listFocus !== null) this.listItems[this.listFocus]?.el.scrollIntoView({ block: "nearest" });
         return true;
       }
-      if (name === "ArrowUp" || name === "ArrowDown") {
-        const last = this.listItems.length - 1;
-        if (this.listFocus === null) this.listFocus = this.checkedItem();
-        else this.listFocus = Math.max(0, Math.min(last, this.listFocus + (name === "ArrowDown" ? 1 : -1)));
+      const onLastRow = !!this.focus && rows[rows.length - 1].includes(this.focus);
+      if ((name === "ArrowDown" && (!this.focus || onLastRow)) || (name === "Enter" && !this.focus)) {
+        this.listFocus = this.checkedItem();
         this.focus = null;
         this.paint();
         this.listItems[this.listFocus]?.el.scrollIntoView({ block: "nearest" });
-      }
-      return true;
-    }
-    const rows = this.ringRows();
-    if (name === "Enter") {
-      if (this.listOpen && !this.focus) {
-        // The list was opened with the mouse: Enter moves the ring into it instead of editing the note.
-        this.listFocus = this.checkedItem();
-        this.paint();
-        this.listItems[this.listFocus]?.el.scrollIntoView({ block: "nearest" });
         return true;
       }
+    }
+    if (name === "Enter") {
       if (!this.focus) return false;
       this.activate(this.focus, true);
       return true;

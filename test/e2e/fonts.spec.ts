@@ -201,10 +201,13 @@ test("with no fonts installed the Font button is hidden, unless the target has a
   await select(page, 0, 5);
   await expect(page.locator(".fmt-popup")).toBeVisible();
   await expect(page.locator(".fmt-popup .fmt-font")).toBeHidden();
-  await select(page, 21, 25);
+  await select(page, 19, 23);
   await expect(page.locator(".fmt-popup .fmt-font")).toBeVisible();
   await page.locator(".fmt-popup .fmt-font").click();
   expect(await listNames(page)).toEqual(["Default", "gone (not installed) ✓"]);
+  // The missing font can still be removed (GLM code r1 #5).
+  await page.locator(".fmt-font-item", { hasText: "Default" }).click();
+  expect(await raw(page)).toBe("plain word end");
 });
 
 test("the pinned bar sets the font of the code block the cursor is in (Sonnet code r1 #2)", async ({ page }) => {
@@ -326,4 +329,28 @@ test("the ring opens on a checked font the list can't apply, where Enter does no
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
   expect(await raw(page)).toBe("see `x` here");
+});
+
+test("in the list, Up from the top, Left or Right take the ring back to the Font button; Down from there goes in (GLM code r1 #4)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await expect(page.locator(".fmt-popup")).toBeVisible();
+  await page.locator(".fmt-popup .fmt-font").click();
+  const font = page.locator(".fmt-popup .fmt-font");
+  const item = (name: string) => page.locator(".fmt-font-item", { hasText: name });
+  await page.keyboard.press("ArrowDown"); // into the list, on the checked entry
+  await expect(item("Default")).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowUp"); // from the top, back to Font
+  await expect(font).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowLeft"); // along the row: Link
+  await expect(page.locator(".fmt-popup .fmt-link")).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown"); // from the second row, into the list
+  await page.keyboard.press("ArrowDown");
+  await expect(item("Fira Code")).toHaveClass(/is-focus/);
+  await page.keyboard.press("ArrowRight"); // back to Font
+  await expect(font).toHaveClass(/is-focus/);
+  await expect(page.locator(".fmt-font-list")).toBeVisible();
+  expect(await raw(page)).toBe("x word y");
 });
