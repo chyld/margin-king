@@ -226,8 +226,25 @@ export function applyFormat(ctx: FormatCtx, from: number, to: number, op: Format
       const linkChars = chars(row).filter((c) => c.link?.id === bare.id);
       const start = linkChars[0].raw;
       const end = linkChars[linkChars.length - 1].raw + 1;
-      const changes = [{ from: start, to: end, insert: op.url }];
-      return { ok: true, changes, anchor: start, head: start + op.url.length };
+      // The new address must re-parse as exactly that link, with the rest of the line unchanged.
+      const line = lineAt(ctx.a, start);
+      const before = chars(row).filter((c) => c.link?.id !== bare.id);
+      const check = (insert: string, form: "bare" | "md"): boolean => {
+        const text = line.text.slice(0, start - line.from) + insert + line.text.slice(end - line.from);
+        const parsed = charsOfLine(text);
+        if (parsed.kind !== line.kind) return false;
+        const linked = parsed.chars.filter((c) => c.link?.url === op.url && c.link.form === form);
+        if (linked.map((c) => c.ch).join("") !== op.url) return false;
+        const rest = parsed.chars.filter((c) => !(c.link?.url === op.url && c.link.form === form));
+        return sameVisible(before.map((c) => ({ ...c, raw: -1 })), rest);
+      };
+      for (const [insert, form] of [[op.url, "bare"], [`[${op.url}](${op.url})`, "md"]] as const) {
+        if (!check(insert, form)) continue;
+        const changes = [{ from: start, to: end, insert }];
+        const textStart = form === "md" ? start + 1 : start;
+        return { ok: true, changes, anchor: textStart, head: textStart + op.url.length };
+      }
+      return { ok: false, reason: "cant" };
     }
   }
 

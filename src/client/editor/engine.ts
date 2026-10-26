@@ -548,7 +548,7 @@ export function del(ctx: Ctx, pos: number): EditResult | null {
     return deleteScreenshot(ctx, lines[line.index + 1], pos);
   }
   const expand: string[] = [];
-  const fold = folds(ctx).find((f) => pos === f.from);
+  const fold = folds(ctx).find((f) => pos === f.from || pos === f.to);
   if (fold) expand.push(fold.key);
   const row = rowOf(ctx, line.index);
   const range = line.kind === "image" ? null : graphemeAfter(row, line, pos);

@@ -60,3 +60,16 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 3 | The listing benchmark asserts 1,500 ms against a 150 ms target | Fixed: 300 ms (2× for a loaded machine) |
 | 4 | Empty trash: filtered count; disabled when a search hides every trashed note | Count already fixed (Sol #3); the button is now only disabled when the trash really is empty |
 | 5 | A composition starting within 30 ms of another drops the first one's repair | Fixed: the earlier snapshot is kept so one repair covers both; the repair diff is anchored at the caret, so a typed `]` isn't mistaken for the link's own |
+
+## Grok 4.7 — fix first (8 findings)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | A save queued during a save is sent before the Discard / Trash prompt can stop it | Fixed: leaving and trashing first wait for every save the user asked for, so the prompt only covers text that was never saved |
+| 2 | A new address for a bare URL isn't verified (`==` in the address ends a highlight) | Fixed: the replacement is re-parsed; if it doesn't read back as that URL with the line otherwise unchanged it's written as `[url](url)`, and refused if that fails too |
+| 3 | New note superseded by the trash view leaves the open note read-only | Fixed: the create counts as loading, and a superseded create restores editing and refreshes the list |
+| 4 | A failed tag save leaves the chip | Fixed: the previous tags come back if that change is still the latest |
+| 5 | A trash search that matches nothing says "Trash is empty"; Empty trash disabled | Fixed: "No matching notes" when a search or tag filter is active; the button was already fixed (GLM #4) |
+| 6 | Delete at the far edge of a collapsed section doesn't expand it | Fixed: Delete expands at either edge, like Backspace |
+| 7 | The docked format bar ignores the home-bar inset | Fixed: `bottom` adds `max(8px, env(safe-area-inset-bottom))` |
+| 8 | Tag suggestions can show 9 rows | Fixed: 7 matches plus "Add new tag" |

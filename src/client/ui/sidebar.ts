@@ -87,7 +87,8 @@ export function mountSidebar(store: Store, actions: Actions): void {
       if (!s.listLoaded) {
         list.replaceChildren();
       } else if (!s.notes.length) {
-        const msg = s.view.trash ? "Trash is empty" : s.view.query.trim() || s.view.tag ? "No matching notes" : "No notes yet";
+        const filtered = !!s.view.query.trim() || (!s.view.trash && !!s.view.tag);
+        const msg = filtered ? "No matching notes" : s.view.trash ? "Trash is empty" : "No notes yet";
         list.replaceChildren(el("li", { class: "list-empty", text: msg }));
       } else {
         list.replaceChildren(...s.notes.map((n) => card(n, s, actions)));

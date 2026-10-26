@@ -222,3 +222,56 @@ test("two compositions back to back are both repaired (GLM r1 #5)", async ({ pag
   // The typed ] splits the link instead of breaking it (both compositions went through the engine).
   expect(await raw(page)).toBe("[d](https://a.com)]x");
 });
+
+test("a save queued during a save finishes before leaving; no prompt for saved text (Grok r1 #1)", async ({ page }) => {
+  const id = await newNoteWith(page, "GOOD");
+  let n = 0;
+  let release!: () => void;
+  const hold = new Promise<void>((r) => (release = r));
+  await page.route(`**/api/notes/${id}`, async (route) => {
+    if (route.request().method() === "PUT" && ++n === 1) await hold;
+    await route.continue();
+  });
+  await select(page, 4);
+  await page.keyboard.type(" BAD");
+  await page.keyboard.press("Control+s");
+  await page.keyboard.type(" WORSE");
+  await page.keyboard.press("Control+s");
+  let prompted = false;
+  page.on("dialog", (d) => {
+    prompted = true;
+    void d.accept();
+  });
+  const leaving = page.click(".new-note");
+  release();
+  await leaving;
+  await expect.poll(async () => (await page.evaluate(() => (window as any).margin.store.get().open?.summary.id))).not.toBe(id);
+  expect(prompted).toBe(false);
+  const saved = await page.evaluate(async (noteId) => (await (await fetch(`/api/notes/${noteId}`)).json()).text, id);
+  expect(saved).toBe("GOOD BAD WORSE");
+});
+
+test("a failed tag save takes the chip back (Grok r1 #4)", async ({ page }) => {
+  const id = await newNoteWith(page, "Tag fails");
+  await page.route(`**/api/notes/${id}/tags`, (route) => route.fulfill({ status: 500, body: JSON.stringify({ error: "Server error" }) }));
+  await page.click(".tag-box");
+  await page.keyboard.type("alpha");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".tag-chips .chip")).toHaveCount(0);
+});
+
+test("New note interrupted by the trash view leaves the open note editable (Grok r1 #3)", async ({ page }) => {
+  const a = await newNoteWith(page, "Stay editable");
+  let release!: () => void;
+  const hold = new Promise<void>((r) => (release = r));
+  await page.route("**/api/notes", async (route) => {
+    if (route.request().method() === "POST") await hold;
+    await route.continue();
+  });
+  await page.click(".new-note");
+  await page.click(".trash-toggle");
+  release();
+  await page.waitForTimeout(200);
+  const s = await page.evaluate(() => ({ ro: (window as any).margin.view.state.readOnly, id: (window as any).margin.store.get().open.summary.id }));
+  expect(s).toEqual({ ro: false, id: a });
+});

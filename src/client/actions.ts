@@ -101,8 +101,13 @@ export class Actions {
   // Unsaved changes
 
   /** Wait for an in-flight save, then ask before discarding unsaved changes (README §3.2). */
+  /** Wait for in-flight saves, including a queued follow-up save (Ctrl+S pressed during a save). */
+  private async settleSaves(): Promise<void> {
+    while (this.savePromise) await this.savePromise.catch(() => {});
+  }
+
   async canLeave(): Promise<boolean> {
-    if (this.savePromise) await this.savePromise.catch(() => {});
+    await this.settleSaves();
     await this.drainTags();
     if (!this.dirty()) return true;
     return window.confirm("You have unsaved changes. Discard them?");
@@ -168,15 +173,22 @@ export class Actions {
     const tags = !view.trash && view.tag ? [view.tag] : [];
     // Nothing typed into the old note while the new one is created can be lost.
     this.editor.setReadOnly(true);
+    this.set(() => ({ loading: true }));
     try {
       const note = await api<NoteSummary>("POST", "/api/notes", { tags });
-      if (g !== this.generation) return;
+      if (g !== this.generation) {
+        void this.refresh(); // The note was created; show it in the list.
+        return;
+      }
       if (view.trash) this.set((s) => ({ view: { ...s.view, trash: false } }));
       this.install({ ...note, text: "" }, g);
       this.editor.focus();
       void this.refresh();
     } catch (err) {
-      if (g === this.generation) this.restoreEditable();
+      if (g === this.generation) {
+        this.set(() => ({ loading: false }));
+        this.restoreEditable();
+      }
       this.fail(err);
     }
   }
@@ -258,6 +270,7 @@ export class Actions {
     const id = open.summary.id;
     const rev = (this.tagRevs.get(id) ?? 0) + 1;
     this.tagRevs.set(id, rev);
+    const previous = open.summary.tags;
     this.set((s) => ({ open: s.open && { ...s.open, summary: { ...s.open.summary, tags } } }));
     const prev = this.tagQueues.get(id) ?? Promise.resolve();
     const next = prev
@@ -272,6 +285,10 @@ export class Actions {
           }
           void this.refresh();
         } catch (err) {
+          const now = this.store.get().open;
+          if (now?.summary.id === id && this.tagRevs.get(id) === rev) {
+            this.set(() => ({ open: { ...now, summary: { ...now.summary, tags: previous } } }));
+          }
           this.fail(err);
         }
       });
@@ -292,7 +309,7 @@ export class Actions {
   async trashNote(): Promise<void> {
     const open = this.store.get().open;
     if (!open || open.summary.trashedAt) return;
-    if (this.savePromise) await this.savePromise.catch(() => {});
+    await this.settleSaves();
     const title = open.summary.title || "Untitled";
     const message = `Move "${title}" to the trash?${this.dirty() ? "\nYour unsaved changes will be lost." : ""}`;
     if (!window.confirm(message)) return;

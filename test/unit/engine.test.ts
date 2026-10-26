@@ -208,3 +208,9 @@ test("copy writes balanced syntax for partial lines", () => {
 test("a bare URL that would swallow a following highlight becomes an explicit link (code review r1)", () => {
   assert.equal(bs("see https://example.com ‸=={green}important=="), "see [https://example.com](https://example.com)‸=={green}important==");
 });
+
+test("Delete at the far edge of a collapsed section expands it (code review r1)", () => {
+  const text = "## {red} Title\nsecret\n## {blue} Next";
+  const r = del(ctxOf(text, ["## {red} Title"]), "## {red} Title\nsecret".length);
+  assert.deepEqual(r?.expand, ["## {red} Title"]);
+});

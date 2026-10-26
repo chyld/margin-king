@@ -23,8 +23,9 @@ export function suggestions(all: TagCount[], onNote: string[], typed: string): {
     if (a.count !== b.count) return b.count - a.count;
     return a.tag < b.tag ? -1 : 1;
   });
-  const out: { tag: string; count: number; isNew?: boolean }[] = pool.slice(0, 8);
-  if (typed && !all.some((t) => t.tag === typed) && !onNote.includes(typed)) out.push({ tag: typed, count: 0, isNew: true });
+  const addNew = !!typed && !all.some((t) => t.tag === typed) && !onNote.includes(typed);
+  const out: { tag: string; count: number; isNew?: boolean }[] = pool.slice(0, addNew ? 7 : 8);
+  if (addNew) out.push({ tag: typed, count: 0, isNew: true });
   return out;
 }
 

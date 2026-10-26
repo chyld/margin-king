@@ -99,3 +99,9 @@ test("a toggle is decided once for the whole selection (code review r1)", () => 
 test("formatting part of a link splits it into links to the same address (§13)", () => {
   assert.equal(fmt("[d«o»cs](https://a.com)", { type: "bold" }), "[d](https://a.com)=={b}[«o»](https://a.com)==[cs](https://a.com)");
 });
+
+test("a new bare-URL address is verified: explicit link if needed, else refused (code review r1)", () => {
+  assert.equal(fmt("«https://ex.com/a»", { type: "link", url: "https://ex.com/b" }), "«https://ex.com/b»");
+  assert.equal(fmt("«https://ex.com/a»", { type: "link", url: "https://ex.com/a==" }), "[«https://ex.com/a==»](https://ex.com/a==)");
+  assert.equal(fmt("=={green}«https://ex.com/a»==", { type: "link", url: "https://ex.com/a==b" }), "=={green}[«https://ex.com/a==b»](https://ex.com/a==b)==");
+});

@@ -228,7 +228,7 @@ class Popup {
       this.dom.classList.add("is-docked");
       const vv = window.visualViewport;
       const keyboard = vv ? Math.max(0, window.innerHeight - (vv.offsetTop + vv.height)) : 0;
-      style.bottom = `${keyboard + 8}px`;
+      style.bottom = `calc(${keyboard}px + max(8px, env(safe-area-inset-bottom)))`;
       return;
     }
     if (this.pinned && m.button) {
