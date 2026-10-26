@@ -1,7 +1,8 @@
 # Margin: architecture
 
 Status: **revised after beta review round 1** (findings and how each was handled:
-[`reviews/architecture-r1.md`](reviews/architecture-r1.md)). Nothing is built yet.
+[`reviews/architecture-r1.md`](reviews/architecture-r1.md)), with the **owner's decisions** recorded
+in §12, §13 and §15 (2026-10-25). Nothing is built yet.
 
 This document says how Margin will be built. *What* Margin does is defined by the original README,
 copied verbatim to [`original-readme.md`](original-readme.md) (from `chyld/note-mvp` at
@@ -14,9 +15,9 @@ copied verbatim to [`original-readme.md`](original-readme.md) (from `chyld/note-
   sections say.
 - **README §5** describes how the original was built. This design is independent of it. §11 says
   where it lands on the same choice and where it differs, and why.
-- **No new features.** Anything a user could notice that the README doesn't ask for is listed in
-  §12 and needs the owner's approval. Gaps where the README is silent, with the default taken, are
-  in §13; the owner can overrule any of them.
+- **No new features** beyond the two the owner approved (§15). Anything else a user could notice that
+  the README doesn't ask for is listed in §12 with the owner's approval. Gaps where the README is
+  silent, with the default the owner confirmed, are in §13.
 
 ## 1. Principles
 
@@ -275,7 +276,11 @@ included). Empty trash does this note by note and returns the count.
 ### 5.8 Sessions (`sessions.ts`)
 
 - Token: 32 random bytes, hex. Cookie:
-  `margin_session=<token>; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`.
+  `margin_session=<token>; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`, plus **`Secure` when
+  the request arrived with `X-Forwarded-Proto: https`** (Margin behind a TLS proxy, §15). The flag is
+  decided per response, so the renewed and the cleared cookie match the request. A client that fakes
+  the header only marks its own cookie Secure, which its browser then won't send over plain HTTP, so
+  trusting the header can't weaken anyone else's session.
 - Stored in memory keyed by `sha256(token)`, persisted to `sessions.json` 200 ms after a change
   through the file's write queue (each write takes the latest snapshot), and flushed on shutdown.
 - **Valid** when it exists, hasn't expired, its user exists, and that user's `uid` equals the
@@ -294,6 +299,17 @@ or once from `MARGIN_PASSWORD`. Takes `users.json.lock`, re-reads `users.json`, 
 atomically, and releases the lock, using the same code the server reads it with. `add` gives the
 user a new random `uid`; `passwd` keeps `uid` and `created`. `remove` leaves the user's notes on
 disk. Installed in the image as `/usr/local/bin/margin-user`; in development, `node cli.js`.
+
+**`margin-user doctor`** (§15) reports, per user, and **changes nothing**:
+- note folders whose `meta.json` is missing or doesn't parse (the ones Margin skips);
+- leftover temporary files: `*.png.upload` from interrupted uploads and `*.tmp-*` from interrupted
+  writes;
+- screenshot lines (`![](name.png)`, outside code blocks, found with the shared parser) whose PNG
+  isn't in the note's folder.
+
+It prints one line per problem with its path, and a summary. It exits 0 when it finds nothing and 1
+otherwise, so it can be scripted. It reads files as they are and takes no locks, so it's safe to
+run while Margin is running (`docker compose exec margin margin-user doctor`).
 
 ## 6. Shared core (`src/shared/`)
 
@@ -720,8 +736,10 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
 - **Server** (`node --test`): starts the server in-process on **port 0** with a temporary `DATA_DIR`,
   then covers every route and error code, the `GET /` 404 rules, sliding expiry, `add` then login with
   no restart, removing and re-adding the same name, concurrent save + tag change, two concurrent CLI
-  `add`s, the session write queue, the login queue limit, and a 2,000-note listing benchmark. The CLI
-  runs as a child process with `MARGIN_PASSWORD`.
+  `add`s, the session write queue, the login queue limit, the `Secure` flag with and without
+  `X-Forwarded-Proto: https`, `doctor` on a data folder seeded with each kind of problem (and an
+  unchanged folder afterwards), and a 2,000-note listing benchmark. The CLI runs as a child process
+  with `MARGIN_PASSWORD`.
 - **Browser** (Playwright, Chromium; desktop, and iPhone 12 Pro size with touch):
   - log in through a `?note=` link;
   - create, edit, save, and the unsaved prompts;
@@ -776,10 +794,11 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
 | Asset caching | not specified | ETag + `no-cache` | An update is never hidden by a stale cached bundle. |
 | Tests | none | unit, server, browser | — |
 
-## 12. Changes a user could notice (need approval)
+## 12. Changes a user could notice (approved by the owner)
 
 None of these adds a feature. Each changes an edge case where the original's behavior is a listed
-limitation, or where the README promises something the original's approach didn't deliver.
+limitation, or where the README promises something the original's approach didn't deliver. The
+owner approved all four on 2026-10-25.
 
 1. **A formatting action that can't be written down safely does nothing, and says so.** The hint
    line shows "Can't apply that here", where the original would produce text that renders
@@ -807,10 +826,12 @@ limitation, or where the README promises something the original's approach didn'
 
 ## 13. Gaps in the README, and the default taken
 
+The owner confirmed every default below on 2026-10-25.
+
 | Question | Default |
 |---|---|
 | Does the formatting popup work in raw mode? | Yes; the README doesn't limit it. Raw selections map to targets per §6.3. |
-| Does `margin-user passwd` end the user's other sessions? | No; the README says only *remove* does. (Ending them is offered as a feature in the review log.) |
+| Does `margin-user passwd` end the user's other sessions? | No; the README says only *remove* does. |
 | Title of a note whose first line is a (closed) fence or a screenshot? | "Untitled": that line shows no text. |
 | Pasting several files at once? | The first file is used. |
 | Ctrl+S while a save is in flight? | One more save runs after it. |
@@ -839,3 +860,16 @@ limitation, or where the README promises something the original's approach didn'
 - **Decoration rebuild cost on very long notes.** Measured (§8), with two fallbacks ready.
 - **No framework in the UI.** Re-render discipline is by convention, kept manageable by one store and
   actions-only state changes (§7.1).
+
+## 15. Features beyond the README (owner decisions)
+
+From the reviewers' suggestions, the owner approved two on 2026-10-25:
+
+| Feature | Where |
+|---|---|
+| The session cookie is marked `Secure` behind an HTTPS proxy (`X-Forwarded-Proto: https`) | §5.8 |
+| `margin-user doctor`, a read-only check of the data folder | §5.9 |
+
+Declined, and so not built: ending other sessions on `margin-user passwd`, rate-limiting failed
+logins, conflict detection on save, a "delete unused screenshots" action, and a switch that turns
+off render-mode protection for long notes.

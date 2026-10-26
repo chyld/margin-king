@@ -94,20 +94,22 @@ alpha checked the disputed claims against CodeMirror's source (`@codemirror/view
 | Start with one editor field | DeepSeek | The analysis/render split is two small fields and is what makes cursor movement cheap; the cache was dropped instead. |
 | Patch the list locally after a save instead of re-fetching | MiniMax | A save can change search matches; at README scale a re-fetch is simpler and always right. |
 
-## Feature suggestions (not adopted; for the owner)
+## Feature suggestions
 
-| Suggestion | Raised by |
-|---|---|
-| `margin-user passwd` ends the user's other sessions | DeepSeek, Grok |
-| `Secure` cookie flag when behind a TLS proxy (`X-Forwarded-Proto`) | Sonnet |
-| Rate-limit failed logins | Sonnet |
-| Opt-in conflict detection on save (two tabs) | DeepSeek |
-| A "delete unused screenshots" action | DeepSeek |
-| `margin-user doctor`: check the data folder for orphans and missing files | GLM |
-| A switch that turns the render-mode guard off for very long notes | GLM |
+| Suggestion | Raised by | Owner |
+|---|---|---|
+| `margin-user passwd` ends the user's other sessions | DeepSeek, Grok | declined |
+| `Secure` cookie flag when behind a TLS proxy (`X-Forwarded-Proto`) | Sonnet | **approved** (architecture §5.8) |
+| Rate-limit failed logins | Sonnet | declined |
+| Opt-in conflict detection on save (two tabs) | DeepSeek | declined |
+| A "delete unused screenshots" action | DeepSeek | declined |
+| `margin-user doctor`: check the data folder for orphans and missing files | GLM | **approved** (architecture §5.9) |
+| A switch that turns the render-mode guard off for very long notes | GLM | declined |
 
-## Waiting on the owner
+## Owner decisions (2026-10-25)
 
-- architecture §12 items 1–4 (approve or reject each);
-- the defaults in architecture §13 (overrule any);
-- the feature suggestions above (each is out unless approved).
+- architecture §12 items 1–4: all approved as proposed (refuse with a hint; the first line's kind
+  wins; keep both fences; copy partial lines as balanced syntax).
+- architecture §13: every default confirmed.
+- Features: the two above approved, the rest declined (architecture §15).
+- Next: a second beta review round.
