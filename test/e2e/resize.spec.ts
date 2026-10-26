@@ -68,3 +68,53 @@ test("a read-only note has no resize handle", async ({ page }) => {
   await page.locator(".cm-shot img").hover();
   await expect(page.locator(".cm-shot-handle")).toBeHidden();
 });
+
+test("a jiggle on the handle writes nothing (Sonnet resize #2)", async ({ page }) => {
+  const name = await newNoteWithShot(page);
+  await page.locator(".cm-shot img").hover();
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 2, y);
+  await page.mouse.move(x + 1, y);
+  await page.mouse.up();
+  expect(await raw(page)).toBe(`before\n![](${name})\nafter`);
+});
+
+test("a drag cut short by a note switch writes nothing and leaves no listeners (Sonnet resize #3)", async ({ page }) => {
+  await newNoteWithShot(page);
+  await page.locator(".cm-shot img").hover();
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y, { steps: 4 });
+  await page.evaluate(() => (window as any).margin.actions.editor.clear());
+  await page.mouse.up();
+  await expect(page.locator(".cm-shot-size")).toHaveCount(0);
+  const escapes = await page.evaluate(() => {
+    let n = 0;
+    document.addEventListener("keydown", (e) => e.key === "Escape" && n++);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return n;
+  });
+  expect(escapes).toBe(1);
+});
+
+test("redo puts a resize back (Ctrl+Y and Ctrl+Shift+Z)", async ({ page }) => {
+  const name = await newNoteWithShot(page);
+  await drag(page, -100);
+  const sized = await raw(page);
+  expect(sized).toMatch(new RegExp(`^before\\n!\\[\\d+%\\]\\(${name.replace(".", "\\.")}\\)\\nafter$`));
+  await page.evaluate(() => (window as any).margin.view.focus());
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => raw(page)).toBe(`before\n![](${name})\nafter`);
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => raw(page)).toBe(sized);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+Shift+Z"); // A real keyboard sends a capital Z with Shift.
+  await expect.poll(() => raw(page)).toBe(sized);
+});

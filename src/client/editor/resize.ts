@@ -29,13 +29,23 @@ export function setImageWidth(view: EditorView, wrap: HTMLElement, width: number
   });
 }
 
-/** A drag on the handle: the image follows the pointer; letting go writes the width. Esc cancels. */
+/** When each screenshot's handle was last tapped (touch screens have no reliable dblclick). */
+const lastTap = new WeakMap<HTMLElement, number>();
+
+/**
+ * A drag on the handle: the image follows the pointer; letting go writes the width. Esc cancels.
+ * Moves under a few pixels (more for a finger) don't count, so a tap or a jiggle writes nothing; a
+ * double tap on a touch screen goes back to the natural size. If the widget goes away mid-drag (a
+ * note switch, or scrolled out of the rendered range), the drag ends without writing.
+ */
 export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLElement, e: PointerEvent): void {
   if (e.button !== 0 || view.state.readOnly) return;
   const line = wrap.closest<HTMLElement>(".cm-line");
   if (!line) return;
   e.preventDefault();
   e.stopPropagation();
+  const touch = e.pointerType !== "mouse";
+  const threshold = touch ? 8 : 3;
   const style = getComputedStyle(line);
   const column = line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const startX = e.clientX;
@@ -43,6 +53,7 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   const before = { width: wrap.style.width, sized: wrap.classList.contains("is-sized") };
   const clamp = (n: number) => Math.min(MAX_IMAGE_WIDTH, Math.max(MIN_IMAGE_WIDTH, n));
   let width = clamp(Math.round((startPx / column) * 100));
+  let dx = 0;
   let moved = false;
 
   const label = document.createElement("span");
@@ -52,36 +63,55 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   wrap.classList.add("is-resizing");
   handle.setPointerCapture(e.pointerId);
 
-  const move = (ev: PointerEvent) => {
-    if (!moved && Math.abs(ev.clientX - startX) < 2) return;
-    moved = true;
-    width = clamp(Math.round(((startPx + ev.clientX - startX) / column) * 100));
-    applyWidth(wrap, width);
-    label.textContent = `${width}%`;
-  };
+  const done = new AbortController();
   const finish = (commit: boolean) => {
-    handle.removeEventListener("pointermove", move);
-    handle.removeEventListener("pointerup", up);
-    handle.removeEventListener("pointercancel", cancel);
-    window.removeEventListener("keydown", key, true);
+    if (done.signal.aborted) return;
+    done.abort();
     label.remove();
     wrap.classList.remove("is-resizing");
     // Back to what the line says; a committed width comes back through the new line's widget.
     wrap.style.width = before.width;
     wrap.classList.toggle("is-sized", before.sized);
-    if (commit && moved) setImageWidth(view, wrap, width);
+    if (!commit || !wrap.isConnected) return;
+    if (moved && Math.abs(dx) >= threshold) {
+      setImageWidth(view, wrap, width);
+    } else if (touch) {
+      const now = performance.now();
+      if (now - (lastTap.get(wrap) ?? -Infinity) < 400) {
+        lastTap.delete(wrap);
+        setImageWidth(view, wrap, null);
+      } else {
+        lastTap.set(wrap, now);
+      }
+    }
   };
-  const up = () => finish(true);
-  const cancel = () => finish(false);
-  const key = (ev: KeyboardEvent) => {
-    if (ev.key !== "Escape") return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    handle.releasePointerCapture(e.pointerId);
-    finish(false);
-  };
-  handle.addEventListener("pointermove", move);
-  handle.addEventListener("pointerup", up);
-  handle.addEventListener("pointercancel", cancel);
-  window.addEventListener("keydown", key, true);
+  const mine = (ev: PointerEvent) => ev.pointerId === e.pointerId;
+  const opts = { signal: done.signal, capture: true };
+  window.addEventListener(
+    "pointermove",
+    (ev) => {
+      if (!mine(ev)) return;
+      dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) < threshold) return;
+      moved = true;
+      width = clamp(Math.round(((startPx + dx) / column) * 100));
+      applyWidth(wrap, width);
+      label.textContent = `${width}%`;
+    },
+    opts,
+  );
+  window.addEventListener("pointerup", (ev) => mine(ev) && finish(true), opts);
+  window.addEventListener("pointercancel", (ev) => mine(ev) && finish(false), opts);
+  // Fired at the document when the handle is removed while it holds the capture.
+  document.addEventListener("lostpointercapture", (ev) => mine(ev) && finish(false), opts);
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      finish(false);
+    },
+    opts,
+  );
 }

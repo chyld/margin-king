@@ -111,8 +111,9 @@ export class ImageWidget extends WidgetType {
     });
     const handle = document.createElement("span");
     handle.className = "cm-shot-handle";
-    handle.title = "Drag to resize · double-click for the original size";
+    handle.title = "Drag to resize · double-click (double-tap) for the original size";
     handle.addEventListener("pointerdown", (e) => startResize(view, wrap, handle, e));
+    // Mouse double-clicks; touch double taps are counted in startResize.
     handle.addEventListener("dblclick", (e) => {
       e.preventDefault();
       setImageWidth(view, wrap, null);

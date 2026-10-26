@@ -1054,6 +1054,8 @@ button {
   cursor: ew-resize;
   touch-action: none;
   opacity: 0;
+  /* Hidden means inert: an unseen handle mustn't catch a swipe meant to scroll. */
+  pointer-events: none;
   transition: opacity 0.15s;
 }
 /* A bigger target than the pill. */
@@ -1065,11 +1067,13 @@ button {
 @media (hover: hover) {
   .cm-shot:hover .cm-shot-handle {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 .cm-shot.is-active .cm-shot-handle,
 .cm-shot.is-resizing .cm-shot-handle {
   opacity: 1;
+  pointer-events: auto;
 }
 .cm-content[contenteditable="false"] .cm-shot-handle {
   display: none;

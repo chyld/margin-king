@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { login, newNoteWith, newNoteWithShot } from "./helpers.ts";
 
 test("phone: the drawer opens with no note, closes when a note opens", async ({ page }) => {
@@ -23,20 +23,54 @@ test("phone: tapping a screenshot shows its resize handle", async ({ page }) => 
   await expect(handle).toHaveCSS("opacity", "0");
 });
 
+/** A finger on the page through Chromium's touch input (real pointer events, unlike synthetic ones). */
+async function finger(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  return {
+    async drag(x: number, y: number, dx: number) {
+      await send("touchStart", x, y);
+      for (let i = 1; i <= 6; i++) await send("touchMove", x + (dx * i) / 6, y);
+      await send("touchEnd", x + dx, y);
+    },
+    async tap(x: number, y: number) {
+      await send("touchStart", x, y);
+      await send("touchEnd", x, y);
+    },
+  };
+}
+
+const line2 = (page: Page) => page.evaluate(() => (window as any).margin.view.state.doc.line(2).text);
+
 test("phone: dragging the handle with a finger resizes the screenshot", async ({ page }) => {
   await login(page);
   const name = await newNoteWithShot(page, "80%");
   await page.locator(".cm-shot img").tap();
+  const column = await page.locator(".cm-shot-line").evaluate((l) => l.clientWidth);
   const box = (await page.locator(".cm-shot-handle").boundingBox())!;
-  const x = box.x + box.width / 2;
-  const y = box.y + box.height / 2;
-  const cdp = await page.context().newCDPSession(page);
-  const touch = (type: "touchStart" | "touchMove" | "touchEnd", px: number) =>
-    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: px, y }] });
-  await touch("touchStart", x);
-  for (let i = 1; i <= 6; i++) await touch("touchMove", x - i * 20);
-  await touch("touchEnd", x - 120);
-  await expect.poll(() => page.evaluate(() => (window as any).margin.view.state.doc.line(2).text)).toMatch(new RegExp(`^!\\[\\d+%\\]\\(${name.replace(".", "\\.")}\\)$`));
-  const text: string = await page.evaluate(() => (window as any).margin.view.state.doc.line(2).text);
-  expect(Number(/(\d+)%/.exec(text)![1])).toBeLessThan(80);
+  await (await finger(page)).drag(box.x + box.width / 2, box.y + box.height / 2, -60);
+  const expected = Math.round(((column * 0.8 - 60) / column) * 100);
+  await expect.poll(() => line2(page)).toBe(`![${expected}%](${name})`);
+});
+
+test("phone: the hidden handle ignores a finger until the image is tapped (Sonnet resize #1)", async ({ page }) => {
+  await login(page);
+  const name = await newNoteWithShot(page, "80%");
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  await (await finger(page)).drag(box.x + box.width / 2, box.y + box.height / 2, -60);
+  await page.waitForTimeout(200);
+  expect(await line2(page)).toBe(`![80%](${name})`);
+});
+
+test("phone: a double tap on the handle goes back to the natural size (Sonnet resize #4)", async ({ page }) => {
+  await login(page);
+  const name = await newNoteWithShot(page, "80%");
+  await page.locator(".cm-shot img").tap();
+  const box = (await page.locator(".cm-shot-handle").boundingBox())!;
+  const f = await finger(page);
+  await f.tap(box.x + box.width / 2, box.y + box.height / 2);
+  expect(await line2(page)).toBe(`![80%](${name})`);
+  await f.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => line2(page)).toBe(`![](${name})`);
 });
