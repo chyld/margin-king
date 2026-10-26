@@ -1,0 +1,33 @@
+{
+  "name": "margin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small self-hosted note app for a handful of people.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server/main.ts",
+    "build": "node scripts/build.ts",
+    "watch": "node scripts/build.ts --watch",
+    "dev": "node scripts/dev.ts",
+    "test": "node --test --test-concurrency=4 \"test/unit/**/*.test.ts\" \"test/server/**/*.test.ts\"",
+    "test:unit": "node --test \"test/unit/**/*.test.ts\"",
+    "test:server": "node --test \"test/server/**/*.test.ts\"",
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
