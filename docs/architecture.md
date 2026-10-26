@@ -1,8 +1,9 @@
 # Margin: architecture
 
-Status: **revised after beta review rounds 1 and 2** (findings and how each was handled:
+Status: **revised after beta review rounds 1–3** (findings and how each was handled:
 [`reviews/architecture-r1.md`](reviews/architecture-r1.md),
-[`reviews/architecture-r2.md`](reviews/architecture-r2.md)), with the **owner's decisions** recorded
+[`reviews/architecture-r2.md`](reviews/architecture-r2.md),
+[`reviews/architecture-r3.md`](reviews/architecture-r3.md)), with the **owner's decisions** recorded
 in §12, §13 and §15 (2026-10-25). Nothing is built yet.
 
 This document says how Margin will be built. *What* Margin does is defined by the original README,
@@ -47,7 +48,7 @@ copied verbatim to [`original-readme.md`](original-readme.md) (from `chyld/note-
 | Concern | Choice | Why |
 |---|---|---|
 | Runtime | **Node.js 26** (Docker `node:26-alpine`; it becomes LTS this month). Code also runs on Node 24 LTS. | Same language as the client, so the parser is shared (principle 4). |
-| Language | **TypeScript**, strict, *erasable syntax only* (no enums, namespaces or parameter properties), `.ts` import specifiers, `package.json` `"type": "module"` | Node runs it directly (type stripping), so the server, the CLI and the tests need **no build step**. `tsc --noEmit` type-checks. Without `"type": "module"`, Node refuses the `import` statements. |
+| Language | **TypeScript**, strict, *erasable syntax only* (no enums, namespaces or parameter properties), `.ts` import specifiers, `package.json` `"type": "module"`. `tsconfig.json`: `erasableSyntaxOnly`, `verbatimModuleSyntax`, `allowImportingTsExtensions`, `noEmit`; type-only imports are written `import type` | Node runs it directly (type stripping), so the server, the CLI and the tests need **no build step**. `tsc --noEmit` type-checks. Without `"type": "module"`, Node refuses the `import` statements. Node strips types but keeps imports, so a plain `import` of a type fails at load time; `verbatimModuleSyntax` makes `tsc` flag it. |
 | HTTP | `node:http` plus a small router and helpers (`src/server/http.ts`) | The surface is ~15 routes and a fixed set of static files. No framework to update or audit. |
 | Passwords | `node:crypto` scrypt | Built in; no native modules. |
 | Editor | **CodeMirror 6** (`@codemirror/state`, `view`, `commands`) | Its document is plain text with decorations, atomic ranges and transaction filters on top: an exact fit for principle 1. ProseMirror and Lexical keep a rich-text tree, which would need a lossless two-way mapping to raw text with no escape character. |
@@ -126,9 +127,9 @@ $DATA_DIR/
 - The note-folder layout and the `meta.json` fields match the original (README §5.3), so notes can
   be copied between the two. `users.json` and `sessions.json` do not match.
 - **One writer process per file.** The CLI writes `users.json`; the server writes `sessions.json`
-  and `notes/`. Two CLI runs at once are serialized by `users.json.lock`, which only its live owner
-  can hold or release (§5.9). Inside the server, writes to one file go through a single queue, so an
-  older snapshot can never be renamed over a newer one.
+  and `notes/`. Two CLI runs at once are serialized by `users.json.lock`, which is never reclaimed
+  automatically (§5.9). Inside the server, writes to one file go through a single queue, so an older
+  snapshot can never be renamed over a newer one.
 - `users.json`:
   `{ "alice": { "uid": "<hex 16 B>", "salt": "<hex 16 B>", "hash": "<hex 64 B>", "N": 32768, "r": 8, "p": 3, "created": "<ISO>" } }`.
   `uid` is random per `add` and kept by `passwd`. The scrypt cost is stored per user, and `maxmem` is
@@ -143,7 +144,8 @@ $DATA_DIR/
   `notes/<username>/` is created (recursive, idempotent) when the user creates their first note;
   the note folder itself is created with a non-recursive `mkdir`, so an id collision fails with
   `EEXIST` and a new id is drawn. Images are streamed into a temp file created with exclusive open
-  (`wx`) and placed with `link`, which never overwrites an existing image (§5.6).
+  (`wx`) and renamed into place under the note's lock only if the name is free, so an existing image
+  is never overwritten (§5.6).
 
 ## 5. Server
 
@@ -157,7 +159,9 @@ $DATA_DIR/
 - `requestTimeout` is 0 (uploads have no size limit, README §3.11) and sockets idle for 120 s are
   closed instead.
 - **Shutdown** on `SIGTERM` / `SIGINT` (Node is PID 1 in the container): stop accepting connections,
-  wait up to 10 s for in-flight requests, flush `sessions.json` through its write queue, exit.
+  wait up to 20 s for in-flight requests, flush `sessions.json` through its write queue, exit.
+  `compose.yaml` sets `stop_grace_period: 30s`, so Docker doesn't kill the process first (its
+  default is 10 s).
 
 ### 5.2 Request pipeline
 
@@ -167,7 +171,7 @@ $DATA_DIR/
 3. Match the route table: `{ method, path regex, access: "public" | "user", handler }`. `HEAD` is
    accepted wherever `GET` is.
 4. `user` routes without a valid session → 401 `{ error }`. All `/api/*` responses carry
-   `Cache-Control: no-store`, except screenshots, which are immutable (5.5).
+   `Cache-Control: no-store`, except screenshots, which are revalidated (5.5).
 5. Bodies: `readJson(req, limit)` requires `Content-Type: application/json` (415 otherwise) and a
    size limit (413 over it): 64 KB everywhere except note text (50 MB). Uploads are streamed (5.6).
 6. Handlers throw `HttpError(status, message)` for expected errors, which become `{ error }`.
@@ -184,7 +188,7 @@ Invisible to users:
 - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`
   (`'unsafe-inline'` for styles because CodeMirror injects its own style sheet).
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
-- **Every non-GET `/api` request must carry the header `X-Margin: 1`.** A page on another origin
+- **Every `/api` request other than GET and HEAD must carry the header `X-Margin: 1`.** A page on another origin
   can only send a custom header after a CORS preflight, which this server never approves, so
   cross-origin form posts and fetches can't act on a user's session. This matters because
   `SameSite=Lax` doesn't protect against other services on the same host (a different port on the
@@ -218,7 +222,7 @@ All bodies and responses are JSON. `Summary` = `{ id, title, created, modified, 
 | `GET /api/session` | | `{ user }` |
 | `GET /api/notes?tag=&q=&trash=1` | | `Summary[]` (5.6 *Listing*) |
 | `GET /api/tags` | | `[{ tag, count }]` over non-trashed notes, alphabetical |
-| `POST /api/notes` | `{ tags? }` | 201 `Summary` |
+| `POST /api/notes` | `{ tags? }` | 201 `Summary`; 400 unless every tag is `^[a-z0-9]{1,40}$` (the same check as the tags route) |
 | `GET /api/notes/:id` | | `Summary & { text }` |
 | `PUT /api/notes/:id` | `{ text }` ≤ 50 MB | `Summary` (sets `modified`); 409 if trashed |
 | `PUT /api/notes/:id/tags` | `{ tags }` | `Summary` (doesn't touch `modified`); 400 unless every tag is `^[a-z0-9]{1,40}$`; de-duplicated, order kept |
@@ -227,7 +231,7 @@ All bodies and responses are JSON. `Summary` = `{ id, title, created, modified, 
 | `DELETE /api/notes/:id` | | `{ ok: true }`; 409 unless trashed |
 | `POST /api/trash/empty` | | `{ deleted: n }` |
 | `POST /api/notes/:id/images` | raw bytes, `Content-Type: image/png` | 201 `{ name }`; 415 if not a PNG; 409 if trashed |
-| `GET /api/notes/:id/images/:name` | | the PNG; `Cache-Control: private, max-age=31536000, immutable` |
+| `GET /api/notes/:id/images/:name` | | the PNG, with `Cache-Control: private, no-cache` and an ETag. The session is checked before any 304, so a browser shared by two users never shows one user's cached screenshot to the other. |
 
 Unknown or foreign note → 404 `{ error: "Note not found" }`.
 
@@ -242,13 +246,14 @@ and a tag change can't lose each other's `meta.json` update, and a Restore in on
 by an Empty trash already under way in another. Only the server writes notes, so an in-process lock
 is enough.
 
-**Atomic writes.** Write `<file>.tmp-<random>`, `fsync`, `rename`. Saving text writes `note.md`
-first, then `meta.json`.
+**Atomic writes.** Write `<file>.tmp-<random>`, `fsync`, `rename`, then `fsync` the folder, so the
+rename itself survives a power cut. Saving text writes `note.md` first, then `meta.json`.
 
 **Valid notes.** A note folder counts when its `meta.json` parses and has the expected shape
-(`created` and `modified` ISO strings, `tags` an array of valid tags, `trashedAt` null or an ISO
-string) and its `note.md` is readable. Anything else is skipped and logged, and reported by
-`margin-user doctor` (§5.9).
+(`created` and `modified` ISO strings, `tags` an array, `trashedAt` null or an ISO string) and its
+`note.md` is readable. Anything else is skipped and logged, and reported by `margin-user doctor`
+(§5.9). A tag entry that isn't a valid tag is ignored, not a reason to hide the note; `doctor`
+reports it.
 
 **Reading.** Listings read the user's note folders directly on every request, as README §7 accepts
 for this scale (in parallel, at most 32 at a time). There's no cache, so files changed on disk while
@@ -265,10 +270,14 @@ then by `id`, so the order is stable. Search text is `visibleText(text).toLowerC
 `<name>.png.upload` with `wx`, and stream the request into it, checking the first 8 bytes against the
 PNG signature as they arrive (abort, delete the temp file and send 415 on a mismatch). No size limit
 (README §3.11). The lock isn't held during the transfer, so a large upload doesn't block saves. Then,
-under the lock again, check the note once more and place the file with `link(temp, final)` before
-removing the temp file. `link` fails with `EEXIST` instead of overwriting, so a name collision draws a
-new name and tries again, and an existing screenshot is never replaced. If the client disconnects
-mid-upload, the temp file is deleted.
+under the lock again, check the note once more, check that `<name>.png` doesn't exist, rename the
+temp file into place and `fsync` the folder. Only the server writes notes and every placement into a
+note holds its lock, so the check and the rename can't be overtaken. A name already taken draws a new
+name, so an existing screenshot is never replaced. (Plain `rename` also works on filesystems without
+hard links.) If the client disconnects mid-upload, the temp file is deleted. If the note's folder
+vanishes during the transfer (Delete forever in another tab), any `ENOENT` from then on (writing,
+cleaning up or placing) becomes the usual 404 "Note not found", and the clean-up tolerates the
+missing temp file.
 
 **Delete forever / Empty trash.** Under the note's lock, re-read `meta.json`; if the note is still
 trashed, remove its folder recursively (screenshots included). Empty trash does this note by note and
@@ -315,7 +324,8 @@ returns the number actually deleted.
 
 ### 5.9 CLI (`margin-user`)
 
-`add <name>`, `passwd <name>`, `remove <name>`, `list`, `doctor`. Validates names
+`add <name>`, `passwd <name>`, `remove <name>`, `list`, `doctor`. Like the server, it uses
+`DATA_DIR` (default `./data`) and finds `users.json` and its lock there. Validates names
 (`^[a-z0-9_-]{1,32}$`) and passwords (≥ 4 characters); reads the password twice with hidden input, or
 once from `MARGIN_PASSWORD`. `add` gives the user a new random `uid`; `passwd` keeps `uid` and
 `created`. `remove` leaves the user's notes on disk. Installed in the image as
@@ -324,31 +334,38 @@ once from `MARGIN_PASSWORD`. `add` gives the user a new random `uid`; `passwd` k
 **Changing `users.json`** (add, passwd, remove), in this order:
 
 1. Prompt for and hash the password first. That's the slow part, and it needs no lock.
-2. Take `users.json.lock`: create it with exclusive open, holding `{ pid, host, token }` with a
-   random token.
-   - If the lock exists and its PID is alive on this host, wait and retry for up to 10 s, then stop
-     with a message naming the lock file. Age alone never makes a lock stale.
-   - If its process is gone (same host, PID not running), reclaim it by renaming that lock file to a
-     unique name, an atomic step that only one CLI can win, and try again.
-   - A lock from another host is treated as alive.
-3. Re-read `users.json`, apply the change, and check that the lock still holds our token immediately
-   before the atomic rename.
-4. Release: remove the lock only if it still holds our token.
+2. Take `users.json.lock`: create it with exclusive open (`wx`) and write `{ pid, host, token, created }`
+   into it, with a random token. Holding it, the CLI only re-reads, changes and renames
+   `users.json`, which takes milliseconds.
+3. If the lock already exists, another CLI is mid-change: retry for up to 10 s. If it's still there,
+   **stop without changing anything** (§13) and print the lock's path and contents (or say it's
+   empty or unreadable) and this: "If no other margin-user is running, delete this file and try
+   again." A lock is never reclaimed automatically. Reclaiming by path can't be made safe: a reviewer
+   reproduced two CLIs both reclaiming the same dead lock and one user change being lost.
+4. Re-read `users.json`. If it doesn't parse, **stop without writing**, naming the file; a corrupt
+   file is never treated as empty. Apply the change, check that the lock still holds our token, and
+   replace the file by atomic rename.
+5. Release: remove the lock if it still holds our token.
 
-The server reads `users.json` with the same code.
+The server reads `users.json` with the same code. If the file stops parsing while the server runs, it
+keeps the last good copy and logs the error; if it doesn't parse at startup, the server exits with a
+message naming the file.
 
 **`margin-user doctor`** (§15) reports, per user, and **changes nothing**:
 - note folders Margin skips (§5.6): `meta.json` missing, unparsable or malformed, or `note.md`
   missing or unreadable;
+- tags in `meta.json` that aren't valid tags (Margin ignores them, §5.6);
 - leftover temporary files: `*.png.upload` from interrupted uploads and `*.tmp-*` from interrupted
   writes;
+- a leftover `users.json.lock`, with its contents;
 - screenshot lines (`![](name.png)`, outside code blocks, found with the shared parser) whose PNG
   isn't in the note's folder.
 
 Items younger than 60 s are left out, because they may be work in progress (a note being created, an
-upload or a save under way). It prints one line per problem with its path, and a summary. It exits 0
-when it finds nothing and 1 otherwise, so it can be scripted. It reads files as they are and takes no
-locks, so it's safe to run while Margin is running (`docker compose exec margin margin-user doctor`).
+upload, a save or a CLI change under way). It prints one line per problem with its path, and a
+summary. It exits 0 when it finds nothing and 1 otherwise, so it can be scripted. It reads files as
+they are and takes no locks, so it's safe to run while Margin is running
+(`docker compose exec margin margin-user doctor`).
 
 ## 6. Shared core (`src/shared/`)
 
@@ -448,13 +465,20 @@ type LineModel = {
   marker moves to just after the last visible character before it. A selection covering only syntax
   has no target.
 
-**`serialize(model) → string`.** A token of the original line is **untouched** when all its
-characters are still there, contiguous, with the same styles and link, and nothing new was inserted
-inside it. Untouched tokens are copied byte-for-byte from `model.text`, so `=={u+lime}` keeps its
-option order and two neighbouring tokens stay two tokens. Everything else is written canonically:
-runs of equal `(color, b, u)` become `=={opts}…==` (options written color, `b`, `u`); inside a run,
-characters of one link become `[…](url)`, or stay bare for `form: "bare"`; runs of `code` become
-`` `…` ``.
+**`serialize(model) → string`.** Original syntax is kept wherever the operation didn't change it.
+- A token whose characters and styles are all unchanged, with nothing inserted between them, is
+  copied byte-for-byte from `model.text`. So two neighbouring tokens stay two tokens.
+- A token that survives with the same style but different content (text typed into it, or part of
+  it deleted) keeps its original marker bytes. So `=={u+lime}` keeps its option order however its
+  text is edited.
+- Only tokens the operation created or restyled are written canonically:
+  - runs of equal `(color, b, u)` become `=={opts}…==`, with options written color, `b`, `u`;
+  - inside a run, characters of one link become `[…](url)`, or stay bare for `form: "bare"`;
+  - runs of `code` become `` `…` ``.
+
+Two spellings are impossible without an escape character: highlight text can't end with `=` (it
+merges with the closing `==`) or start with `==`. Formatting that would need one is refused (§12,
+item 1); an edit that would produce one turns those `=` into plain text (§7.7).
 
 **Changes, not replacements.** Every rewrite reaches the editor as a **change set that keeps each
 retained character in place**. It's built from the model's old-to-new correspondence, so it inserts
@@ -524,7 +548,14 @@ first", and nothing changes.
     address); an empty answer is refused ("Can't apply that here"), because a bare URL can't be
     unlinked without an escape character.
 - **Section**: a plain line gets `## {blue-deep} ` (leading spaces removed); a heading loses its
-  prefix. On an empty line → "Select some text first". Disabled on code lines.
+  prefix. On an empty line → "Select some text first". Disabled on code, fence and screenshot lines.
+- **Paste a URL over a selection** (README §3.10, both modes): when the pasted text, trimmed, is
+  exactly one `http(s)://` URL by the parser's rules and the selection is within one line, the
+  selected text becomes a `[text](url)` link to it, like the Link operation, verified, and refused if
+  it can't be written. Any other paste is an ordinary paste.
+- **Which lines an operation touches.** Formatting acts only on `text` lines and heading text. Code,
+  fence and screenshot lines inside a target are skipped. `</>` is the one operation that acts on
+  code blocks (its rule 1), and the only one enabled when the target is inside a block.
 - **`formatState`**: which buttons are on, which swatch is ringed and which are disabled. Link is on
   for bare URLs too. A heading's characters count as having the section's color. Inside a code block,
   everything but `</>` is disabled.
@@ -549,19 +580,26 @@ first", and nothing changes.
   is: ask (unsaved changes, confirmations), call the API, update state, then refresh the list.
 - After any change, the list and the tag counts are **re-fetched** rather than patched locally, so
   the server stays the single source of truth. Every list request carries a sequence number, and a
-  response older than the newest one applied is dropped, so typing fast in the search box can't show
-  stale results.
-- **Opening a note** is serialized the same way: each open gets a sequence number and only the
-  newest is applied. While a different note is loading, the editor is read-only, so nothing typed
-  in the old note can be lost when the new one replaces it.
+  response is applied only if it answers the **latest request issued**. So typing fast in the search
+  box can't show stale results, even when a newer request fails.
+- **Navigation** has one generation number. It's raised by every accepted navigation: opening a
+  note, New note, Home, entering or leaving the trash view, trashing, restoring and logging out. An
+  asynchronous result (a note load, a pending screenshot insertion) is applied only if its generation
+  is still current, so a slow load can't reopen a note after the user went Home. While a different
+  note is loading, the editor is read-only, so nothing typed in the old note can be lost when the new
+  one replaces it.
 - **Tags** save immediately through a per-note queue, so quick changes reach the server in order.
   Each request sends the whole tag list and carries its note id. A response is applied only if that
   note is still open, and the queue is drained before the app leaves the note.
 - **Tag filter options** are the server's tags, plus the selected tag with a count of 0 if the
   server no longer returns it, until another filter is picked (README §3.13). **New note** sends the
   selected filter tag (README §3.1). **Tag suggestions** are ordered on the client as README §3.13
-  says: tags starting with the typed text first, then by count, then alphabetically, at most 8, with
-  "Add new tag …" last when the text isn't an existing tag.
+  says:
+  - tags already on the note are left out;
+  - tags starting with the typed text come first, then by count, then alphabetically, at most 8;
+  - "Add new tag …" is last when the text isn't an existing tag;
+  - with text typed, the first entry is highlighted and Enter takes it, so `alp` + Enter adds
+    `alpha`.
 - Components (`ui/*`) each own one DOM subtree and re-render it when their slice of state changes.
   All user data is inserted with `textContent` and attributes, never `innerHTML`.
 - `prefs.ts`: `margin:mode`, `margin:font`, `margin:sidebar`, `margin:collapsed:<noteId>`.
@@ -608,16 +646,26 @@ the palette classes (§6.1). Confirmations and the Link prompt use the browser's
 ### 7.6 Editor (`editor/`)
 
 One `EditorView` for the app's lifetime. Opening a note installs a **new `EditorState`**, which
-resets undo history (README §3.7), with the note id and that open's sequence number (§7.1) in a
-facet.
+resets undo history (README §3.7), with the note id and that navigation's generation number (§7.1)
+in a facet.
 
 **Keymaps, in precedence order** (the first binding that handles a key wins):
 
 1. the formatting popup's keys, only while it's visible (§7.8);
-2. in render mode, the intent commands (§7.7): Backspace, Delete, Enter, Shift+Enter, word and
-   line-boundary deletion, and macOS's Ctrl+D, Ctrl+H, Ctrl+K and Ctrl+O;
-3. Tab / Shift+Tab in code blocks (both modes);
-4. CodeMirror's `standardKeymap` and `historyKeymap`, with **Enter and Shift+Enter overridden in both
+2. in render mode, the **intent keys** (§7.7). Each runs an engine function and dispatches its result
+   as a `bypass` transaction; none runs a CodeMirror command:
+   - Backspace, Delete, Enter, Shift+Enter;
+   - word deletion (Ctrl+Backspace/Delete, macOS Alt+Backspace/Delete) and line-boundary deletion
+     (macOS Cmd+Backspace/Delete, Ctrl+K);
+   - macOS Ctrl+D, Ctrl+H, Ctrl+O (split line) and Ctrl+T (transpose);
+3. in render mode, the **motion wrappers**. Every `standardKeymap` binding whose command moves by
+   line, by page, to a line boundary or to a document boundary is rebound: ↑/↓, Page Up/Down,
+   Home/End, Ctrl/Cmd+Home/End, the macOS Cmd+Arrow and Ctrl+Arrow keys, and the Emacs-style
+   Ctrl+A/E/P/N/V. Each wrapper runs the same command, with or without Shift, and labels its
+   transaction `select.vertical` or `select.lineboundary` (§7.7, part 2);
+4. Tab / Shift+Tab in code blocks (both modes): indents or outdents the selected `code` lines by two
+   spaces, skipping fence lines, which must stay exactly as they are;
+5. CodeMirror's `standardKeymap` and `historyKeymap`, with **Enter and Shift+Enter overridden in both
    modes**: raw mode binds both to a plain `insertNewline`, render mode to the engine's Enter.
    (`standardKeymap` itself binds both to `insertNewlineAndIndent`, which copies indentation.)
 
@@ -626,14 +674,14 @@ more) aren't in the README (§13). Ctrl/Cmd+S and Ctrl/Cmd+E are handled at the 
 (§7.1).
 
 Other extensions, always on: `history`, `drawSelection`, line wrapping, the **analysis field**, the
-collapsed field, the pending-upload field (§7.9), the end-of-file marker, Tab in code, the popup,
+collapsed field, the pending-uploads field (§7.9), the end-of-file marker, Tab in code, the popup,
 link handling, paste and copy, spellcheck (§13), an update listener (dirty state, collapse
-persistence, link chip, the caret correction after undo and redo), and two compartments:
+persistence, link chip), and two compartments:
 
-- **mode**: render = render field, atomic ranges, caret rules, intent commands, invariant filter,
-  class `mode-render`; raw = class `mode-raw`. Switching reconfigures this compartment only, so the
-  document, the selection and undo history carry over. Entering render mode dispatches the caret
-  rules once (§7.7), so a raw-mode cursor inside syntax is moved out.
+- **mode**: render = render field, atomic ranges, caret rules, intent keys, motion wrappers,
+  invariant filter, class `mode-render`; raw = class `mode-raw`. Switching reconfigures this
+  compartment only, so the document, the selection and undo history carry over. Entering render mode
+  dispatches the caret rules once (§7.7), so a raw-mode cursor inside syntax is moved out.
 - **read-only** (trashed notes, and while another note loads): `EditorState.readOnly` and
   `EditorView.editable` false.
 
@@ -644,13 +692,19 @@ persistence, link chip, the caret correction after undo and redo), and two compa
 | `analysis` (both modes) | the document changes | the `parseDoc` result and each line's inline tokens. Used by render, caret rules, the engine, popup, links and Tab. |
 | `render` (render mode) | analysis changes, the collapsed set changes, or a caret enters or leaves a fence line | decorations, the **hidden ranges** and the atomic ranges built from them |
 
-**Hidden ranges, and so atomic ranges, are the hidden syntax pieces only**: an opening `=={…}`, a
-closing `==`, a backtick, `[` and `](url)`, a heading prefix (replaced by the fold toggle), a hidden
-fence line's text, a whole screenshot line, a collapsed section's content. Never a whole token, so →
-walks through visible text one character at a time. CodeMirror stops carets at the edges of an
-atomic range, never inside one, and moves a caret out in its direction of travel, so ↓ onto a
-screenshot line moves past it. A caret at either end of a fence line counts as being on that line, so
-a hidden fence is reachable from the keyboard, and it reveals itself as soon as the caret lands.
+**Hidden ranges, and so atomic ranges, are the hidden syntax pieces only**:
+- an opening `=={…}` and a closing `==`;
+- a backtick, and `[` and `](url)`;
+- a heading prefix (replaced by the fold toggle);
+- a hidden fence line's text and a whole screenshot line;
+- a collapsed section's content.
+
+Never a whole token, so → walks through visible text one character at a time. CodeMirror moves a
+caret only when it lands *strictly inside* an atomic range, to the edge in its direction of travel. A
+caret can therefore rest at either edge of a fence line or a screenshot line: ↓ onto a screenshot
+line stops at one of its edges, and §7.7 says what each key does there. A caret at either end of a
+fence line counts as being on that line, so a hidden fence is reachable from the keyboard, and it
+reveals itself as soon as the caret lands.
 
 **Decorations** follow README §3.8–§3.12 and §4:
 - the title line gets a class;
@@ -671,108 +725,160 @@ a hidden fence is reachable from the keyboard, and it reveals itself as soon as 
 **Collapsed sections.** A `StateField<Set<string>>` of heading-line texts, changed by a
 `toggleSection` effect, loaded from and saved to `margin:collapsed:<noteId>`. It isn't part of the
 document, so collapsing never makes a note unsaved.
-- Editing the heading's text keeps the section collapsed, and its stored entry follows the new text.
-- An edit at the end of the heading line, across its line break or in the hidden content expands the
-  section first (§13). So does a deletion that reaches the hidden content from an empty caret
-  (§7.7).
+- The key is the heading line's exact text (README §3.8), so headings with identical text collapse
+  and expand together (§13).
+- Editing a collapsed heading's text keeps it collapsed: the new text is added to the set, and the
+  old text is removed unless another heading still has it.
+- Typing or Enter at the end of a collapsed heading line expands the section first, as does a word or
+  line deletion that reaches the hidden content from an empty caret (§7.7). A selection that
+  includes the hidden content deletes it with the selection.
 
 ### 7.7 Render-mode editing (`caret.ts`, `guard.ts`)
 
 README §3.7, in four parts: one edit engine, and the three ways edits reach it.
 
 **1. The edit engine** (`guard.ts`, built on the line model). Every render-mode edit, whatever its
-source, is computed by the same functions: `backspace`, `delete`, `enter`, `insertText` and
-`deleteRange`. Each returns a change set (§6.3) and a selection. Their rules:
+source, is computed by these functions:
+- `backspace`, `delete`;
+- `deleteUnit(word | lineBoundary, direction)`;
+- `enter`, `splitLine`;
+- `transpose`;
+- `insertText`, `replaceRange`, `deleteRange`;
+- `drop`.
 
+Each takes the start state and returns one change set (§6.3) and one selection. The rules below are
+listed by precedence: where two could apply, the earlier one wins.
+
+- **Headings first.** A caret at the start of a heading's text (visible index 0, whether or not a
+  token starts there):
+  - Backspace removes the prefix, leaving a plain line;
+  - Enter inserts the break before the heading line;
+  - inserted whitespace is dropped (§13).
 - **Tokens are never cut in half.** A highlight, inline code or link keeps all its hidden pieces
   while any of its visible characters remain, whether or not a raw range covers those pieces. It
-  loses all of them when none remain. So deleting from inside a highlight to the end of the line keeps
-  its closing `==`, and cutting exactly its visible text removes it entirely.
-- **Backspace and Delete at a caret**:
+  loses all of them when none remain.
+- **Every deletion or replacement ends with the same clean-up**, on every line it touched, applied
+  to the final text after any inserted text is in place:
+  - tokens left with no visible characters are removed;
+  - a heading's text loses any leading whitespace it now starts with;
+  - a heading whose text is now empty becomes an empty line (README §3.7).
+
+  This covers Backspace and Delete at a caret as much as range deletions.
+- **Screenshot lines.** A caret can rest at either edge of a screenshot line (§7.6).
+  - At its end edge, or at the start of the line after it: Backspace deletes the screenshot line.
+  - At its start edge, or at the end of the line before it: Delete deletes it.
+  - Enter at the start edge inserts an empty line before it; at the end edge, after it.
+  - Text inserted at either edge goes on a new line before or after it.
+- **Fence lines** (shown when a caret is on them) and **code lines** are literal. Text is inserted
+  and deleted as plain characters, and Enter is a plain line break with no indentation. The results
+  are accepted even when they change the block (deleting a backtick from a fence unpairs it), as in
+  raw mode. Only range deletions and joins protect fence pairing (below).
+- **Backspace and Delete at a caret**, otherwise:
   - next to a highlight, code or link marker: delete the adjacent visible grapheme, stepping over
     the marker;
-  - at the start of a heading's text (Backspace): remove the prefix, leaving a plain line;
-  - right after a screenshot line (Backspace), or right before one (Delete): delete that line;
-  - at a line's edge: join the two lines only as README §3.7 allows. That's always if either line is
-    empty; never with a fence or screenshot line, never when the line being joined is a heading, and
-    never when only one line is in a code block. The join also needs both lines' tokens to re-parse
-    unchanged after it. Otherwise the caret just moves to the end of the previous line (Backspace) or
-    the start of the next (Delete);
-  - next to a collapsed section: expand it, then delete as usual.
-- **Enter** (also Shift+Enter, macOS Ctrl+O, and any line break inserted by paste or an input method):
+  - next to a collapsed section: expand it, then delete as usual;
+  - at a line's edge: **join** the two lines. If either line is empty, the empty line is removed and
+    the other stays exactly as it is, whatever its kind. Otherwise there is no join with a fence or
+    screenshot line, none when the line being joined is a heading, and none when only one line is
+    in a code block. A join also needs both lines' tokens to re-parse unchanged after it. When a
+    join is refused, the caret just moves to the end of the previous line (Backspace) or the start
+    of the next (Delete).
+- **`deleteUnit`** computes its range over *visible* characters: a word (CodeMirror's grouping of
+  word characters, spaces and punctuation) or the visible start or end of the line, stepping over
+  markers. That range then goes through `deleteRange`. If the range would reach a collapsed
+  section's hidden content from an empty caret, the section is expanded and `deleteUnit` runs again
+  on the expanded text.
+- **Enter** (also Shift+Enter, and any line break inserted by paste or an input method):
   - inside a highlight, code or link: close it before the break and reopen it after; at a token's
     edge, step outside instead of leaving an empty piece;
   - inside a bare URL: both halves become `[text](url)` links to the original address (§13);
-  - at the start of a heading's text: insert the break before the heading line;
-  - at the end of a collapsed heading: expand the section first;
-  - on a code line: a plain line break, with no indentation.
-- **Inserting text**:
-  - text inserted inside a token takes its style, so typing at the end of a highlighted word extends
-    it;
-  - a typed or pasted character that is syntax for an enclosing token splits the token around it.
-    That covers `]` in link text, a backtick in inline code, and an `=` that would form `==` in a
-    highlight. The character shows as plain text and the rest keeps its formatting (§13);
-  - pasted text that contains syntax of its own is inserted raw between the split halves of the
-    enclosing tokens, so pasted formatting is interpreted, not shown as literal characters. Pasted
-    plain text is inserted as if typed, with line breaks handled as Enter;
-  - text inserted at a screenshot line's edge goes on a new line before or after it;
-  - whitespace inserted at the start of a heading's text is dropped, so the heading stays a heading
-    (§13).
-- **Deleting a range** (a selection deleted or replaced, cut, drag-and-drop):
-  - the visible characters in the range go, and tokens follow the first rule. A heading's text loses
-    any leading whitespace the deletion exposes, and a heading whose text becomes empty becomes an
-    empty line (README §3.7);
+  - at the end of a collapsed heading: expand the section first.
+
+  **`splitLine`** (macOS Ctrl+O) makes exactly Enter's changes, but leaves the caret before the
+  break.
+- **`transpose`** (macOS Ctrl+T) swaps the two visible graphemes around the caret. Each keeps its own
+  style; hidden syntax never moves.
+- **Inserting text** inside a token gives the text the token's style, so typing at the end of a
+  highlighted word extends it. Except:
+  - an insertion that would change the line's tokens in any other way than that token growing by the
+    inserted text splits the token around the inserted characters. That covers a `]` in link text,
+    a backtick in inline code, and an `=` beside another `=` in a highlight, including the closing
+    marker's. The characters show as plain text and the rest keeps its formatting (§13);
+  - highlight text can't end with `=` (it would merge with the closing `==`). So when such a split
+    happens, the whole run of `=` around the split point becomes plain;
+  - **pasted text** is processed line by line. Its line breaks are handled as Enter. A segment that
+    contains syntax of its own is inserted raw at the top level: the enclosing token is closed before
+    it and reopened after it, so pasted formatting is interpreted. A segment without syntax is
+    inserted as if typed.
+- **`replaceRange`** (typing or pasting over a selection, autocorrect, spellcheck suggestions): the
+  inserted text takes the style of the **first selected visible character** (§13), as in a word
+  processor. Then the clean-up runs. So retyping a selected highlighted word keeps the highlight, and
+  retyping a heading's only word keeps the heading.
+- **`deleteRange`** (a selection deleted, cut):
+  - the visible characters in the range go, and tokens follow the token rule;
   - **across lines**, the range is split at protected lines: a fence whose partner lies outside the
-    range is kept, and screenshot lines are whole. Within each part, fully covered lines go and the
-    partial first and last lines are joined, keeping the first line's kind (§12, item 2). Nothing is
-    joined across a kept fence. Code lines lose only their selected text, or go if fully covered (§12,
-    item 3);
-  - **collapsed sections**: one inside a selection the user made is deleted with it, because it's
-    visibly part of the selection. A word or line deletion can also reach one from an empty caret,
-    because CodeMirror's delete commands extend a range across an atomic range. In that case the
-    section is expanded instead, and the deletion runs again on the expanded text with the same unit.
+    range is kept, and screenshot lines are whole. Within each part, fully covered lines go. The
+    partial first and last lines are joined by the same join rule as at a caret: empty lines simply
+    go, and nothing is joined to a fence or screenshot line (the line break stays). When the second
+    line is a heading, its prefix is removed and its remaining text joins the first line, keeping
+    the first line's kind (§12, item 2). Nothing is joined across a kept fence. Code lines lose only
+    their selected text, or go if fully covered (§12, item 3);
+  - a collapsed section whose hidden content lies inside the range is deleted with it, because it's
+    visibly part of the selection.
+- **`drop`** (drag-and-drop, one transaction with a deletion and an insertion): for a move, delete the
+  source with `deleteRange`, then insert the dragged text in its copy form (§7.9) at the drop position
+  mapped through that deletion, as a paste. Dragging in from outside is just the paste. The result is
+  one change set, with the dropped text selected.
 - **No other checks.** The engine's results are applied as computed. Side effects that come from
   the text itself are accepted, as they are when typing in raw mode (README §7). For example,
   deleting the space before a bare URL can leave it after a letter, so it stops being a link. Only
   joins are checked first, because README §3.7 makes them conditional.
 
-**2. Caret rules** (`caret.ts`):
+**2. Caret rules** (`caret.ts`), for transactions that change only the selection. The engine applies
+the same rules to the selection it returns with an edit.
 - a caret strictly inside hidden syntax moves to an edge in its direction of travel; a range's
-  endpoints move outward;
-- a caret placed at the *outer* edge of a closing marker (of a highlight, inline code or link) moves
-  to its inner edge when it was placed by the pointer (including the head of a drag selection), by
-  ↑/↓, by Home/End or by Page Up/Down. So typing at the end of a highlighted word extends it, and →
-  once more (README §3.7) is the only way out. CodeMirror labels every motion just `select`, so
-  Margin binds those motion keys to wrappers that label their transactions `select.vertical` or
-  `select.lineboundary`. ← and → are exempt;
+  endpoints move outward, and are otherwise left where they were placed;
+- an **empty** caret placed at the *outer* edge of a closing marker (of a highlight, inline code or
+  link) moves to its inner edge, when the pointer (`select.pointer`) or a motion wrapper
+  (`select.vertical`, `select.lineboundary`) placed it. So typing at the end of a highlighted word
+  extends it, and → once more (README §3.7) is the only way out. ← and → are exempt;
 - a caret at the very start of a heading line moves after the prefix.
 
-These run as a transaction filter. **Undo and redo** run with filtering off in CodeMirror's history,
-which they must, to restore text exactly. So when an undo or redo restores a selection that breaks a
-rule, an update listener dispatches one selection-only correction that isn't added to history.
-Entering render mode also dispatches the rules once.
+These run as a transaction filter. The invariant filter ignores selection-only transactions and the
+caret filter ignores edits, so their order doesn't matter. Both are **suspended while an input method
+is composing**, so the composition is never disturbed (part 4).
 
-**3. Intent commands.** The keymap entries in §7.6, item 2, call the engine directly. Desktop keys
-and iOS reach them. On Android, CodeMirror re-dispatches only some deletions and line breaks as key
-events, so part 4 covers the rest.
+**Undo and redo** run with filtering off in CodeMirror's history, which they must, to restore text
+exactly. When one restores a selection that breaks a rule, a view plugin schedules one selection-only
+correction for straight after the update (CodeMirror doesn't allow dispatching during one). The
+correction isn't added to history. Entering render mode dispatches the rules once.
 
-**4. Invariant filter.** A transaction filter on every render-mode user transaction except Margin's
-own, which carry a `bypass` annotation. Undo and redo never reach it. Each change is classified and
-sent to the engine:
-- **shaped like a key at the caret** (one grapheme, or a hidden piece next to the caret, deleted in
-  one direction; or a single line break inserted at the caret) → `backspace`, `delete` or `enter`,
-  exactly as the key would;
-- **an insertion** → `insertText`. When the result equals the raw change, as it does for ordinary
-  typing, IME and autocorrect, the transaction passes through untouched;
-- **anything else** → `deleteRange` plus `insertText`.
+**3. Intent keys.** The keymap entries in §7.6, item 2, call the engine directly. Desktop keys and iOS
+reach them. On Android, CodeMirror re-dispatches only some deletions and line breaks as key events,
+so part 4 covers the rest.
+
+**4. Invariant filter.** A transaction filter on every render-mode user transaction that changes the
+document, except Margin's own, which carry a `bypass` annotation. Undo and redo never reach it. The
+**whole transaction** is classified, in this order:
+1. `move.drop` (or `input.drop`) → `drop`;
+2. `move.character` → `transpose`;
+3. a single change shaped like a key at the caret (one grapheme, or a hidden piece next to the caret,
+   deleted in one direction; or a single line break inserted at the caret) → `backspace`, `delete` or
+   `enter`, exactly as the key would;
+4. a single insertion → `insertText`. When the result equals the raw change, as it does for ordinary
+   typing, IME and autocorrect, the transaction passes through untouched;
+5. a single replacement → `replaceRange`; a single deletion → `deleteRange`;
+6. several changes (multiple selections) → each is handled as above, in document order. Each later
+   change is mapped through the engine's result for the earlier ones, and everything is combined
+   into one change set.
 
 The engine's result replaces the transaction, keeping its user event, annotations and effects, so
 undo grouping and `isUserEvent` checks still work.
 
-**Composition** (input methods, `input.type.compose`): changes pass through untouched while
-composing, so the input method is never interrupted. The document and selection are recorded when
-composition starts. When it ends, the whole composition is diffed against that snapshot as one change
-and classified as above. If the engine's result differs from the current text, the difference is
+**Composition** (input methods, `input.type.compose`): both filters let changes pass untouched while
+composing. The document and selection are recorded when composition starts. When it ends, the whole
+composition is diffed against that snapshot as one change and classified as above, and the caret
+rules are applied. If the result differs from the current text or selection, the difference is
 dispatched once, labelled `input.type.compose`, so undo treats it and the composition as one step.
 
 ### 7.8 Formatting popup and bar (`popup.ts`)
@@ -810,23 +916,33 @@ A view plugin that owns one DOM element, built from `formatState` (§6.4) on eve
 - **Paste**, in both modes:
   - If the clipboard holds a file, take the first one. Anything but a PNG shows "Only PNG screenshots
     are allowed".
-  - A PNG uploads (toast "Uploading screenshot…"). A **pending-upload field** in the editor state
-    holds `{ uploadId, noteId, pos }`, and maps the position through every change. The field belongs
-    to that note's `EditorState`, so reopening the note (a new state, §7.6) or a failed upload drops
-    it. When the upload finishes and the field still holds it, `![](name.png)` is inserted on its own
-    line at the mapped position. The context comes from the current analysis: a highlight or link
-    there is split as Enter does, a position inside a code block puts the line after the block, and a
-    collapsed section expands. It's dispatched as one `bypass` transaction, labelled `input.paste` for
-    undo. Otherwise nothing is inserted, and the PNG stays in the note's folder, like any screenshot
-    whose line was deleted.
-  - A URL pasted over a one-line selection becomes a link.
-  - Text: in render mode it goes through the engine (§7.7); in raw mode, CodeMirror's plain insertion.
+  - A PNG uploads (toast "Uploading screenshot…"). The **pending-uploads field** holds one entry per
+    upload, keyed by upload id: `{ noteId, generation, pos }`. Every entry's position is mapped through
+    each change. Entries are removed one by one when their upload finishes or fails, and all of them
+    when the note's state is replaced or a navigation away from it is accepted (§7.1).
+  - When an upload finishes, `![](name.png)` is inserted only if its entry is still there, its note is
+    the open one, from the same navigation generation, and the editor is editable. The line goes on
+    its own line at the mapped position. The context comes from the current analysis: a highlight or
+    link there is split as Enter does, a position inside a code block puts the line after the block,
+    and a collapsed section expands. It's dispatched as one `bypass` transaction, labelled
+    `input.paste` for undo. Uploads that finish out of order are each inserted at their own position.
+    Otherwise nothing is inserted, and the PNG stays in the note's folder, like any screenshot whose
+    line was deleted.
+  - Pasting a URL over a one-line selection is the §6.4 *paste a URL* operation, in both modes.
+  - Other text: in render mode it goes through the engine (§7.7); in raw mode, CodeMirror's plain
+    insertion.
 - **Copy and cut** in render mode (§12, item 4): each selected line is copied in order, joined by line
-  breaks. A partly selected first or last line is written as balanced syntax for its selected visible
-  text, and fully selected lines are copied raw. So "rist" from a green highlight copies
-  `=={green}rist==`, and a selection from mid-highlight onto the next line keeps the highlight. Raw
-  mode copies the raw selection as it is. The code-block Copy button uses `navigator.clipboard` when
-  available, and a hidden-textarea fallback over plain HTTP.
+  breaks.
+  - A partly selected first or last `text` or heading line is written as balanced syntax for its
+    selected visible text.
+  - A partly selected code, fence or screenshot line is copied as its raw selected text, since code is
+    literal.
+  - Fully selected lines are copied raw.
+
+  So "rist" from a green highlight copies `=={green}rist==`, and a selection from mid-highlight onto
+  the next line keeps the highlight. Raw mode copies the raw selection as it is. The same copy form is
+  what a drag-move drops (§7.7). The code-block Copy button uses `navigator.clipboard` when available,
+  and a hidden-textarea fallback over plain HTTP.
 
 ### 7.10 Phones and touch
 
@@ -868,8 +984,24 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
     - `delete.cut`, `move.drop` and `input.paste`;
     - composition with a snapshot;
     - word and line-boundary deletion next to collapsed sections;
-  - typed syntax characters inside each kind of token; leading whitespace in headings; Enter in a bare
+  - typed syntax characters inside each kind of token, including `=` at a highlight's inner end and
+    runs of `=`; leading whitespace in headings, through caret and range deletions; Enter in a bare
     URL;
+  - **rule precedence**:
+    - Backspace and Enter at the start of a heading whose text begins with a highlight;
+    - retyping a selected highlighted word, link text, inline code and a heading's only word;
+    - Backspace, Delete, Enter and typing at both edges of a screenshot line;
+    - Enter, typing and deletion on a revealed fence line;
+    - joins of an empty line next to a fence, a screenshot and a heading;
+    - range deletions whose join would meet a fence, screenshot or heading line;
+    - Tab across fence lines;
+  - `deleteUnit` over visible words and line boundaries; `splitLine` and `transpose`; a `move.drop`
+    of a whole token; multi-line formatted paste inside each kind of token; a transaction with
+    several changes;
+  - formatting across code, fence and screenshot lines (they're skipped); Section disabled on them;
+    pasting a URL over a selection;
+  - untouched tokens keep their bytes when text is typed at their edges (`=={u+lime}abc==` plus
+    `d`);
   - **undo and redo restore the exact previous text** after every formatting operation, Enter, a
     composition repair and a screenshot insertion, and the caret afterwards obeys the caret rules;
   - CRLF input; titles, `visibleText`, colors, validators.
@@ -880,9 +1012,13 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
     the session write queue, and the `Secure` flag with and without `X-Forwarded-Proto: https`;
   - races: a concurrent save and tag change, Empty trash and Delete forever racing Restore, a save
     racing Trash, listing while notes are deleted, and an upload name collision;
-  - a folder with only `meta.json`;
+  - an upload racing Delete forever (404, no 500); `HEAD` without `X-Margin`; `POST /api/notes` with
+    an invalid tag; screenshot revalidation with a different user's session;
+  - a folder with only `meta.json`, and a `meta.json` with one invalid tag (the note still shows);
   - the CLI, run as a child process with `MARGIN_PASSWORD`: two concurrent `add`s, including one whose
-    first holder stalls while holding the lock, and a stale lock left by a dead process;
+    first holder stalls while holding the lock; a leftover lock (stops with the message, writes
+    nothing); a zero-byte lock; a corrupt `users.json` (the CLI stops without writing; the server
+    keeps its last good copy); `DATA_DIR` respected;
   - the login queue limit;
   - `doctor` on a data folder seeded with each kind of problem, ignoring items under 60 s old and
     leaving the folder unchanged;
@@ -896,7 +1032,11 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
     mouse click on each button applying once, and cancelling the Link prompt;
   - PNG paste, including switching notes during an upload, and closing and reopening the note before
     it finishes;
-  - copy and paste between notes, including a selection across lines;
+  - two PNG pastes in a row; an upload finishing while another note loads (nothing inserted);
+  - Home clicked while a slow note load is in flight; a failed newer search after an older one;
+  - motion keys at a closing marker (End, Cmd+→, ↓) leave the caret inside;
+  - the tag box: `alp` + Enter adds `alpha`; tags already on the note aren't suggested;
+  - copy and paste between notes, including a selection across lines; dragging a highlighted word;
   - trash flows, 404 pages, the drawer.
 - Every test uses its own port and temporary directory, and only stops processes it started.
 - **Not covered by automation**: a real phone keyboard (README §7). The composition test replays
@@ -922,7 +1062,7 @@ link chip follow the input actually used (§7.8, §7.9). All of it per README §
      no runtime dependencies, so this stage has no `node_modules`. It sets
      `ENV NODE_ENV=production DATA_DIR=/data PORT=5555` and runs `CMD ["node", "src/server/main.ts"]`.
 - **compose.yaml**: service `margin`, `restart: unless-stopped`, port `5555:5555`, volume
-  `./data:/data`, user `${MARGIN_UID:-1000}:${MARGIN_GID:-1000}`.
+  `./data:/data`, user `${MARGIN_UID:-1000}:${MARGIN_GID:-1000}`, `stop_grace_period: 30s` (§5.1).
 - **Data directory**: the repo contains `data/.gitkeep` (`.gitignore` has `data/*` and
   `!data/.gitkeep`), so `git clone` creates `./data` owned by the user who cloned it. Docker then
   doesn't create it as root, and the README §2 install commands work unchanged. If the folder still
@@ -960,6 +1100,7 @@ owner approved all four on 2026-10-25.
    - inline code next to a stray backtick;
    - unlinking a bare URL;
    - wrapping lines when one of them is exactly a closing fence (it would close the new block);
+   - formatting that would leave highlight text ending in `=` or starting with `==`;
    - any other result that fails verification.
 
    Edits (typing, deleting, Enter) are never refused.
@@ -978,8 +1119,8 @@ owner approved all four on 2026-10-25.
 
 ## 13. Gaps in the README, and the default taken
 
-The owner confirmed every default below on 2026-10-25; the last six rows were added after review
-round 2.
+The owner confirmed every default below on 2026-10-25, including the rows decided after review
+rounds 2 and 3.
 
 | Question | Default |
 |---|---|
@@ -1005,6 +1146,9 @@ round 2.
 | Enter inside a bare URL? | Both halves become `[text](url)` links to the original address, so they stay "two links to the same address" (README §3.10). |
 | An edit that would leave a space at the start of a heading's text? | The space is dropped and the heading stays a heading. |
 | Typing a syntax character inside a token (`]` in link text, a backtick in code, `==` in a highlight)? | The token is split around it: the character shows as plain text and the rest keeps its formatting. |
+| Typing or pasting over a selection that covers formatted text (including a spellcheck suggestion)? | The new text takes the style of the first selected character, so retyping a highlighted word keeps the highlight and retyping a heading's only word keeps the heading. *(after round 3)* |
+| `margin-user` finds a leftover `users.json.lock` from a process that's gone? | After 10 s it stops without changing anything, prints the lock's contents and says it's safe to delete if no other `margin-user` is running; `doctor` reports it too. It never reclaims a lock itself. *(after round 3)* |
+| Two headings with exactly the same text? | They collapse and expand together, because README §3.8 keys collapsed sections by the heading line's exact text. |
 
 ## 14. Risks
 
