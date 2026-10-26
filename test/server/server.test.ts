@@ -301,3 +301,27 @@ describe("usernames (code review r1)", () => {
     assert.equal(await new Client(s.base).login("__proto__", "pw1234"), 200);
   });
 });
+
+describe("limits (code review r1)", () => {
+  test("415 for a non-JSON body, 413 for an oversized one", async () => {
+    const c = new Client(s.base);
+    await c.login("alice", "secret");
+    const wrongType = await c.req("POST", "/api/notes", new TextEncoder().encode("{}"), { "Content-Type": "text/plain" });
+    assert.equal(wrongType.status, 415);
+    const big = await c.req("POST", "/api/login", { username: "x".repeat(70_000), password: "y" });
+    assert.equal(big.status, 413);
+  });
+
+  test("piped passwords: both lines are read", async () => {
+    const { execFile } = await import("node:child_process");
+    const { ROOT } = await import("./helpers.ts");
+    const code = await new Promise<number>((resolve) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, DATA_DIR: s.dataDir };
+      delete env.MARGIN_PASSWORD;
+      const child = execFile(process.execPath, [join(ROOT, "cli.js"), "add", "piped"], { env }, (err) => resolve(err ? 1 : 0));
+      child.stdin!.end("abcd\nabcd\n");
+    });
+    assert.equal(code, 0);
+    assert.equal(await new Client(s.base).login("piped", "abcd"), 200);
+  });
+});

@@ -196,3 +196,11 @@ test("space in the tag box adds what was typed, not the suggestion (Muse r1 #6)"
   await page.keyboard.press(" ");
   await expect(page.locator(".tag-chips .chip")).toHaveText(["alp×"]);
 });
+
+test("a right-click on a popup button does nothing (Sonnet r1 #5)", async ({ page }) => {
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await expect(page.locator(".fmt-popup")).toBeVisible();
+  await page.locator(".fmt-popup .fmt-b").click({ button: "right" });
+  expect(await raw(page)).toBe("x word y");
+});

@@ -267,6 +267,16 @@ function settleRow(row: Row, slice: (a: number, b: number) => string): void {
     c.link = null;
   }
   if (ok()) return;
+  // A bare URL now runs into its neighbor (URLs may contain =, { and }): write it as an explicit
+  // [url](url) link, which looks the same and keeps both tokens.
+  const explicit = new Map<number, LinkRef>();
+  for (const c of chars(row)) {
+    if (c.link?.form !== "bare") continue;
+    let ref = explicit.get(c.link.id);
+    if (!ref) explicit.set(c.link.id, (ref = { id: c.link.id, url: c.link.url, form: "md" }));
+    c.link = ref;
+  }
+  if (explicit.size && ok()) return;
   fixEquals(row);
 }
 

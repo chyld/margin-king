@@ -36,3 +36,17 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 8 | Deleting a collapsed heading collapses the next section | Fixed: only edits that keep the heading prefix count as renames |
 | 9 | Unwrapping a code block drops the selection | Already fixed (Sol #12) |
 | 10 | A first-line heading doesn't get the title size | Not adopted: README §5.7 gives the title size to a plain first line only; the unused CSS rule was removed |
+
+## Sonnet 5.5 — fix first (9 findings; ~100k fuzzed operations found nothing else)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Empty trash count is the filtered list | Already fixed (Sol #3) |
+| 2 | `margin-user remove <unknown>` leaves the lock | Already fixed (Sol #6) |
+| 3 | Deleting the space before a highlight lets a bare URL swallow it | Fixed: such a URL is written as an explicit `[url](url)` link, which looks the same and keeps both tokens |
+| 4 | Multi-character deletes at the caret cut to one character | Already fixed (Sol #10) |
+| 5 | A right-click applies a popup option; a mouseup outside the window leaves the popup hidden | Fixed: primary button only; `pointerup` and window blur also end the press |
+| 6 | Piped `margin-user add` loses the second password line | Fixed: piped stdin is read once and handed out a line per prompt |
+| 7 | The abandoned-login abort listens on the request (fires after the body), not the response | Fixed: it listens on the response's `close` |
+| 8 | New note leaves the old note writable during the request | Already fixed (Sol #2) |
+| 9 | Test gaps | Added: session renewal, expiry and on-disk hashing; 413 and 415; piped passwords; the earlier regressions |

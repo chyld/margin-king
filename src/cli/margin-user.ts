@@ -38,27 +38,29 @@ function fail(message: string): never {
 /** An error raised while holding the lock: reported after the lock is released. */
 class CliError extends Error {}
 
+// Not a terminal (a pipe): stdin is read once and handed out a line per prompt.
+let pipedLines: Promise<string[]> | null = null;
+function pipedLine(): Promise<string> {
+  pipedLines ??= new Promise((resolveAll) => {
+    let buf = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk: string) => (buf += chunk));
+    process.stdin.on("end", () => resolveAll(buf.split(/\r?\n/)));
+    process.stdin.resume();
+  });
+  return pipedLines.then((lines) => lines.shift() ?? "");
+}
+
 /** Read a line from the terminal without echoing it. */
 function askHidden(prompt: string): Promise<string> {
   return new Promise((resolvePrompt, reject) => {
     const stdin = process.stdin;
     process.stdout.write(prompt);
     if (!stdin.isTTY) {
-      // Not a terminal: read one line from stdin.
-      let buf = "";
-      const onData = (chunk: Buffer) => {
-        buf += chunk.toString("utf8");
-        const nl = buf.indexOf("\n");
-        if (nl >= 0) {
-          stdin.off("data", onData);
-          stdin.pause();
-          process.stdout.write("\n");
-          resolvePrompt(buf.slice(0, nl).replace(/\r$/, ""));
-        }
-      };
-      stdin.on("data", onData);
-      stdin.on("end", () => resolvePrompt(buf));
-      stdin.resume();
+      void pipedLine().then((line) => {
+        process.stdout.write("\n");
+        resolvePrompt(line);
+      });
       return;
     }
     let value = "";

@@ -204,3 +204,7 @@ test("copy writes balanced syntax for partial lines", () => {
   assert.equal(cp("```\nfo«o b»ar\n```"), "o b");
   assert.equal(cp("«## {red} Head»"), "## {red} Head");
 });
+
+test("a bare URL that would swallow a following highlight becomes an explicit link (code review r1)", () => {
+  assert.equal(bs("see https://example.com ‸=={green}important=="), "see [https://example.com](https://example.com)‸=={green}important==");
+});

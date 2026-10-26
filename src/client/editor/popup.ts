@@ -73,6 +73,8 @@ class Popup {
       this.refresh();
     });
     window.addEventListener("mouseup", this.onMouseUp);
+    window.addEventListener("pointerup", this.onMouseUp);
+    window.addEventListener("blur", this.onMouseUp);
     window.addEventListener("pointerdown", this.onOutside, true);
     window.visualViewport?.addEventListener("resize", this.onViewport);
     window.visualViewport?.addEventListener("scroll", this.onViewport);
@@ -81,6 +83,7 @@ class Popup {
     this.dom.addEventListener("mousedown", (e) => e.preventDefault());
     this.dom.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      if (e.button !== 0) return;
       const btn = (e.target as HTMLElement).closest("button");
       if (!btn || btn.disabled) return;
       for (const row of this.rows) for (const cell of row) if (cell.el === btn) this.activate(cell);
@@ -339,6 +342,8 @@ class Popup {
   destroy(): void {
     this.dom.remove();
     window.removeEventListener("mouseup", this.onMouseUp);
+    window.removeEventListener("pointerup", this.onMouseUp);
+    window.removeEventListener("blur", this.onMouseUp);
     window.removeEventListener("pointerdown", this.onOutside, true);
     window.visualViewport?.removeEventListener("resize", this.onViewport);
     window.visualViewport?.removeEventListener("scroll", this.onViewport);

@@ -90,8 +90,8 @@ export function apiRoutes(d: Deps): Route[] {
         await d.users.refresh();
         const record = isUsername(username) ? d.users.get(username) : undefined;
         const abort = new AbortController();
-        c.req.on("close", () => {
-          if (!c.res.writableEnded) abort.abort();
+        c.res.on("close", () => {
+          if (!c.res.writableFinished) abort.abort();
         });
         let ok: boolean;
         try {
