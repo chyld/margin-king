@@ -201,14 +201,17 @@ export function apiRoutes(d: Deps): Route[] {
         if (!isImageName(name) || !(await d.store.exists(user(c), id))) throw new HttpError(404, "Not found");
         const path = d.store.imagePath(user(c), id, name);
         let size: number;
+        let etag: string;
         try {
-          size = (await stat(path)).size;
+          const st = await stat(path);
+          size = st.size;
+          // From the file itself, not its name: two users' notes can hold the same note and image names.
+          etag = `"${st.ino.toString(36)}-${size.toString(36)}-${Math.trunc(st.mtimeMs).toString(36)}"`;
         } catch {
           throw new HttpError(404, "Not found");
         }
         // Screenshots never change, but they're revalidated so a browser shared by two users never
         // shows one user's cached image to the other: the session was checked above, before any 304.
-        const etag = `"${name}"`;
         const headers = { "Content-Type": "image/png", "Cache-Control": "private, no-cache", ETag: etag };
         if (c.req.headers["if-none-match"] === etag) {
           c.res.writeHead(304, headers);

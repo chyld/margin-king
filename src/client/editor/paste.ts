@@ -60,7 +60,7 @@ async function uploadScreenshot(view: EditorView, file: File, host: PasteHost): 
   const now = view.state.facet(noteFacet);
   if (pos === undefined || now.id !== note.id || now.generation !== host.generation() || view.state.readOnly) return;
   const rendered = !!view.state.field(renderField, false);
-  const r = rendered ? insertScreenshot(ctxOf(view.state), pos, name) : insertScreenshotRaw(view.state.doc.toString(), pos, name);
+  const r = rendered ? insertScreenshot(ctxOf(view.state), pos, name) : insertScreenshotRaw(ctxOf(view.state), pos, name);
   view.dispatch({
     changes: r.changes,
     selection: EditorSelection.cursor(r.head),

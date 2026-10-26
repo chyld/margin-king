@@ -73,3 +73,20 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 6 | Delete at the far edge of a collapsed section doesn't expand it | Fixed: Delete expands at either edge, like Backspace |
 | 7 | The docked format bar ignores the home-bar inset | Fixed: `bottom` adds `max(8px, env(safe-area-inset-bottom))` |
 | 8 | Tag suggestions can show 9 rows | Fixed: 7 matches plus "Add new tag" |
+
+## Kimi K3.1 Pro — fix first (12 findings)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | New note leaves the old note writable during the request | Already fixed (Sol #2) |
+| 2 | Trash / Delete forever completion closes another note | Already fixed (Sol #1) |
+| 3 | A late composition repair rewrites the next note | Already fixed (Sol #4) |
+| 4 | A text save's reply puts back tags from before a tag change, and the next tag change then deletes it | Fixed: a save's reply keeps the open note's tags (tag replies were already checked against their revision) |
+| 5 | Screenshot ETags are the file name only, so two users with the same note and image names share a validator | Fixed: the ETag comes from the file (inode, size, modification time) |
+| 6 | Empty trash confirms the filtered count | Already fixed (Sol #3) |
+| 7 | A multi-change edit shifts later changes by length, not through the earlier edits | Fixed: each change is mapped through the earlier ones. One caret afterwards is by design: multiple selections are off |
+| 8 | A bare-URL address isn't verified | Already fixed (Grok #2); Kimi's `?a=` and `?a==b` cases added as tests |
+| 9 | Word delete and transpose work on UTF-16 units | Fixed: both work on graphemes, so a keycap or an emoji is one unit |
+| 10 | In raw mode, a screenshot pasted inside a code block lands in the block | Fixed: it goes after the block, as in render mode (architecture §7.9) |
+| 11 | Word or line delete next to a collapsed section changes hidden text | Fixed: it expands the section first, like Backspace and Delete |
+| 12 | `margin-user` error paths exit holding the lock | Already fixed (Sol #6) |

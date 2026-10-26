@@ -105,3 +105,8 @@ test("a new bare-URL address is verified: explicit link if needed, else refused 
   assert.equal(fmt("«https://ex.com/a»", { type: "link", url: "https://ex.com/a==" }), "[«https://ex.com/a==»](https://ex.com/a==)");
   assert.equal(fmt("=={green}«https://ex.com/a»==", { type: "link", url: "https://ex.com/a==b" }), "=={green}[«https://ex.com/a==b»](https://ex.com/a==b)==");
 });
+
+test("a bare-URL address ending in = keeps its = (Kimi r1 #8)", () => {
+  assert.equal(fmt("«https://a.com»", { type: "link", url: "https://b.com/?a=" }), "[«https://b.com/?a=»](https://b.com/?a=)");
+  assert.equal(fmt("=={green}«https://a.com»==", { type: "link", url: "https://b.com/?a==b" }), "=={green}[«https://b.com/?a==b»](https://b.com/?a==b)==");
+});

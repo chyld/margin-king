@@ -250,7 +250,8 @@ export class Actions {
       const now = this.store.get().open;
       if (!now || now.summary.id !== id) return;
       this.set(() => ({
-        open: { ...now, summary, savedDoc: snapshot },
+        // Tags have their own queue; a text save's reply may predate a tag change made meanwhile.
+        open: { ...now, summary: { ...summary, tags: now.summary.tags }, savedDoc: snapshot },
         save: this.editor.doc().eq(snapshot) ? "saved" : "unsaved",
       }));
       void this.refreshList();

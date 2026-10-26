@@ -275,3 +275,42 @@ test("New note interrupted by the trash view leaves the open note editable (Grok
   const s = await page.evaluate(() => ({ ro: (window as any).margin.view.state.readOnly, id: (window as any).margin.store.get().open.summary.id }));
   expect(s).toEqual({ ro: false, id: a });
 });
+
+test("a text save's reply doesn't take back a tag added meanwhile (Kimi r1 #4)", async ({ page }) => {
+  const id = await newNoteWith(page, "Tags race");
+  let release!: () => void;
+  const hold = new Promise<void>((r) => (release = r));
+  let started!: () => void;
+  const seen = new Promise<void>((r) => (started = r));
+  await page.route(`**/api/notes/${id}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const response = await route.fetch(); // The server saves now; only the reply waits.
+    started();
+    await hold;
+    await route.fulfill({ response });
+  });
+  const serverTags = () => page.evaluate(async (noteId) => (await (await fetch(`/api/notes/${noteId}`)).json()).tags, id);
+  await select(page, 9);
+  await page.keyboard.type("!");
+  await page.keyboard.press("Control+s");
+  await seen;
+  await page.click(".tag-box");
+  await page.keyboard.type("x");
+  await page.keyboard.press("Enter");
+  await expect.poll(serverTags).toEqual(["x"]);
+  release();
+  await expect.poll(async () => (await store(page)).save).toBe("saved");
+  await expect(page.locator(".tag-chips .chip")).toHaveCount(1);
+  await page.keyboard.type("y");
+  await page.keyboard.press("Enter");
+  await expect.poll(serverTags).toEqual(["x", "y"]);
+});
+
+test("each change of a multi-change edit lands where it was aimed (Kimi r1 #7)", async ({ page }) => {
+  await newNoteWith(page, "https://a.com");
+  await page.evaluate(() => {
+    const view = (window as any).margin.view;
+    view.dispatch({ changes: [{ from: 1, insert: "\n" }, { from: 5, insert: "\n" }], userEvent: "input.type" });
+  });
+  expect(await raw(page)).toBe("[h](https://a.com)\n[ttps](https://a.com)\n[://a.com](https://a.com)");
+});

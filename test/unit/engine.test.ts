@@ -7,6 +7,7 @@ import {
   deleteRange,
   deleteUnit,
   enter,
+  insertScreenshotRaw,
   insertText,
   makeCtx,
   transpose,
@@ -213,4 +214,34 @@ test("Delete at the far edge of a collapsed section expands it (code review r1)"
   const text = "## {red} Title\nsecret\n## {blue} Next";
   const r = del(ctxOf(text, ["## {red} Title"]), "## {red} Title\nsecret".length);
   assert.deepEqual(r?.expand, ["## {red} Title"]);
+});
+
+test("word delete and transpose work on whole graphemes (Kimi r1 #9)", () => {
+  const key = "1️⃣";
+  const t1 = `a ${key}`;
+  assert.equal(show(t1, deleteUnit(ctxOf(t1), t1.length, "word", "backward")), "a ‸");
+  const t2 = `=={b}x ${key}==`;
+  assert.equal(show(t2, deleteUnit(ctxOf(t2), t2.length - 2, "word", "backward")), "=={b}x ‸==");
+  const t3 = "a😀b";
+  assert.equal(show(t3, transpose(ctxOf(t3), 1)), "😀a‸b");
+  assert.equal(show(t3, transpose(ctxOf(t3), 3)), "ab😀‸");
+  const t4 = "=={b}a😀==";
+  assert.equal(show(t4, transpose(ctxOf(t4), t4.length - 2)), "=={b}😀a‸==");
+});
+
+test("word delete next to a collapsed section expands it (Kimi r1 #11)", () => {
+  const text = "## {red} T\nhidden word\n## {blue} Next";
+  const pos = "## {red} T\nhidden word".length;
+  const r = deleteUnit(ctxOf(text, ["## {red} T"]), pos, "word", "backward");
+  assert.deepEqual(r?.expand, ["## {red} T"]);
+  assert.equal(show(text, r), "## {red} T\nhidden ‸\n## {blue} Next");
+  assert.deepEqual(deleteUnit(ctxOf(text, ["## {red} T"]), pos, "line", "backward")?.expand, ["## {red} T"]);
+});
+
+test("a screenshot pasted in raw mode inside a code block goes after it (Kimi r1 #10)", () => {
+  const text = "```\ncode\n```\nafter";
+  const r = insertScreenshotRaw(ctxOf(text), 6, "a7p2xq9d.png");
+  assert.equal(show(text, r), "```\ncode\n```\n![](a7p2xq9d.png)‸\nafter");
+  const plain = "ab";
+  assert.equal(show(plain, insertScreenshotRaw(ctxOf(plain), 1, "a7p2xq9d.png")), "a\n![](a7p2xq9d.png)\n‸b");
 });

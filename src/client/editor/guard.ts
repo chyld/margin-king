@@ -243,19 +243,19 @@ export const invariantFilter = EditorState.transactionFilter.of((tr) => {
     if (sameAsRaw(r, raws[0], tr)) return tr;
     return { ...specOf(r, userEvent), effects: [...(r.expand.length ? [expandSections.of(r.expand)] : []), ...tr.effects] };
   }
-  // Several changes: handle them in document order, each against the result of the earlier ones.
+  // Several changes: handle them in document order, each against the result of the earlier ones,
+  // its position mapped through what they changed (an edit can rewrite more than its own range).
   const specs: TransactionSpec[] = [];
   let ctx = ctxOf(state);
-  let offset = 0;
+  let mapped = ChangeSet.empty(state.doc.length);
   let last: EditResult | null = null;
   for (const raw of raws) {
-    const from = raw.fromA + offset;
-    const to = raw.toA + offset;
+    const from = mapped.mapPos(raw.fromA, 1);
+    const to = Math.max(from, mapped.mapPos(raw.toA, -1));
     const r = raw.text ? insertText(ctx, from, to, raw.text, "type") : deleteRange(ctx, from, to);
     specs.push({ changes: r.changes, sequential: specs.length > 0 });
-    const next = applyChanges(ctx.text, r.changes);
-    offset += next.length - ctx.text.length;
-    ctx = makeCtx(next, ctx.collapsed);
+    mapped = mapped.compose(ChangeSet.of(r.changes, ctx.text.length));
+    ctx = makeCtx(applyChanges(ctx.text, r.changes), ctx.collapsed);
     last = r;
   }
   if (last) specs[specs.length - 1] = { ...specs[specs.length - 1], selection: EditorSelection.single(last.anchor, last.head) };

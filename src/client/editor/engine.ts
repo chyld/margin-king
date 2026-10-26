@@ -561,11 +561,24 @@ export function del(ctx: Ctx, pos: number): EditResult | null {
 }
 
 type Category = "word" | "space" | "other";
-function categorize(ch: string): Category {
-  if (/\s/.test(ch)) return "space";
-  if (/[\p{L}\p{N}_]/u.test(ch)) return "word";
+function categorize(g: string): Category {
+  if (!/\S/.test(g)) return "space";
+  if (/[\p{L}\p{N}_]/u.test(g)) return "word";
   return "other";
 }
+
+/** Characters grouped into graphemes, so an emoji or a keycap is one unit. */
+function graphemes<T extends { ch: string }>(cs: T[]): T[][] {
+  const out: T[][] = [];
+  let i = 0;
+  for (const seg of segmenter.segment(cs.map((c) => c.ch).join(""))) {
+    out.push(cs.slice(i, i + seg.segment.length));
+    i += seg.segment.length;
+  }
+  return out;
+}
+
+const textOf = (g: { ch: string }[]) => g.map((c) => c.ch).join("");
 
 /** A word (CodeMirror's grouping) or everything to the line's edge, over visible characters. */
 export function deleteUnit(ctx: Ctx, pos: number, unit: "word" | "line", dir: "backward" | "forward"): EditResult | null {
@@ -577,23 +590,29 @@ export function deleteUnit(ctx: Ctx, pos: number, unit: "word" | "line", dir: "b
   const seq: { ch: string; raw: number }[] = literal
     ? line.text.split("").map((ch, i) => ({ ch, raw: line.from + i }))
     : chars(row).map((c) => ({ ch: c.ch, raw: c.raw }));
-  const side = dir === "backward" ? seq.filter((c) => c.raw < pos).reverse() : seq.filter((c) => c.raw >= pos);
+  const all = graphemes(seq);
+  const side = dir === "backward" ? all.filter((g) => g[0].raw < pos).reverse() : all.filter((g) => g[0].raw >= pos);
   if (!side.length) return dir === "backward" ? backspace(ctx, pos) : del(ctx, pos);
   let taken = side.length;
   if (unit === "word") {
     let cat: Category | null = null;
     taken = 0;
     for (let i = 0; i < side.length; i++) {
-      const c = categorize(side[i].ch);
+      const g = textOf(side[i]);
+      const c = categorize(g);
       if (cat !== null && c !== cat) break;
-      if (side[i].ch !== " " || i !== 0) cat = c;
+      if (g !== " " || i !== 0) cat = c;
       taken = i + 1;
     }
   }
-  const group = side.slice(0, taken);
-  const start = dir === "backward" ? group[group.length - 1].raw : pos;
-  const end = dir === "backward" ? pos : group[group.length - 1].raw + 1;
-  return editRange(ctx, start, end, [], { caretOrigin: pos });
+  const last = side[taken - 1];
+  const start = dir === "backward" ? last[0].raw : pos;
+  const end = dir === "backward" ? pos : last[last.length - 1].raw + 1;
+  // Next to a collapsed section, expand it first, as Backspace and Delete do.
+  const expand = folds(ctx)
+    .filter((f) => pos === f.to || (dir === "forward" && pos === f.from))
+    .map((f) => f.key);
+  return editRange(ctx, start, end, [], { caretOrigin: pos, expand });
 }
 
 export function enter(ctx: Ctx, from: number, to: number, split = false): EditResult {
@@ -613,22 +632,24 @@ export function transpose(ctx: Ctx, pos: number): EditResult | null {
   const line = lineAt(ctx.a, pos);
   const row = rowOf(ctx, line.index);
   if (line.kind === "image") return null;
-  const cs = isRich(row) ? chars(row) : line.text.split("").map((ch, i) => ({ ch, raw: line.from + i }) as VChar);
-  let i = cs.findIndex((c) => c.raw >= pos);
-  if (i < 0) i = cs.length;
-  if (i === cs.length) i--;
+  const gs = graphemes(isRich(row) ? chars(row) : line.text.split("").map((ch, i) => ({ ch, raw: line.from + i }) as VChar));
+  let i = gs.findIndex((g) => g[0].raw >= pos);
+  if (i < 0) i = gs.length;
+  if (i === gs.length) i--;
   if (i <= 0) return null;
-  const x = cs[i - 1];
-  const y = cs[i];
+  const x = gs[i - 1];
+  const y = gs[i];
+  const yEnd = y[y.length - 1].raw + 1;
   if (!isRich(row)) {
-    return done([{ from: x.raw, to: y.raw + 1, insert: y.ch + x.ch }], y.raw + 1);
+    return done([{ from: x[0].raw, to: yEnd, insert: textOf(y) + textOf(x) }], yEnd);
   }
-  // Swap the characters; each keeps its own style. Hidden syntax never moves.
+  // Swap the graphemes; each character keeps its own style. Hidden syntax never moves.
+  const moved = new Set<Item>([...x, ...y]);
   const swapped: Item[] = [];
   for (const it of row.items) {
-    if (it === x) swapped.push({ ...y, raw: -1 });
-    else if (it === y) swapped.push({ ...x, raw: -1 }, { kind: "caret", id: "c", aff: "prev" });
-    else swapped.push(it);
+    if (it === x[0]) swapped.push(...y.map((c) => ({ ...c, raw: -1 })));
+    else if (it === y[0]) swapped.push(...x.map((c) => ({ ...c, raw: -1 })), { kind: "caret", id: "c", aff: "prev" });
+    else if (!moved.has(it)) swapped.push(it);
   }
   const serial = serializeRows([{ ...row, items: swapped }]);
   const changes = piecesToChanges(serial.pieces, line.from, line.to, sliceOf(ctx));
@@ -739,9 +760,15 @@ export function insertScreenshot(ctx: Ctx, pos: number, name: string): EditResul
   return editRange(ctx, pos, pos, segs, { expand });
 }
 
-/** The same in raw mode: plain text, line breaks added as needed. */
-export function insertScreenshotRaw(text: string, pos: number, name: string): EditResult {
+/** The same in raw mode: plain text, line breaks added as needed; inside a code block, after it. */
+export function insertScreenshotRaw(ctx: Ctx, pos: number, name: string): EditResult {
   const md = `![](${name})`;
+  const line = lineAt(ctx.a, pos);
+  if (isLiteralLine(line)) {
+    const close = ctx.a.doc.lines[ctx.a.doc.blocks[line.block!].close];
+    return done([{ from: close.to, to: close.to, insert: `\n${md}` }], close.to + 1 + md.length);
+  }
+  const text = ctx.text;
   const before = pos > 0 && text[pos - 1] !== "\n";
   const after = pos < text.length && text[pos] !== "\n";
   const insert = `${before ? "\n" : ""}${md}${after ? "\n" : ""}`;

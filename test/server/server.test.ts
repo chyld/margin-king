@@ -214,6 +214,14 @@ describe("notes", () => {
     const b = new Client(s.base);
     await b.login("bob", "hunter2");
     assert.equal((await b.req("GET", `/api/notes/${n.id}/images/${name}`, undefined, { "If-None-Match": etag })).status, 404);
+    // Bob holding a note and screenshot with the same names doesn't revalidate against Alice's (Kimi r1 #5).
+    const fs = await import("node:fs/promises");
+    await fs.cp(join(s.dataDir, "notes", "alice", n.id), join(s.dataDir, "notes", "bob", n.id), { recursive: true });
+    const bobsPng = Uint8Array.from([...PNG, 1, 2, 3]);
+    await fs.writeFile(join(s.dataDir, "notes", "bob", n.id, name), bobsPng);
+    const theirs = await b.req("GET", `/api/notes/${n.id}/images/${name}`, undefined, { "If-None-Match": etag });
+    assert.equal(theirs.status, 200);
+    assert.deepEqual(new Uint8Array(await theirs.arrayBuffer()), bobsPng);
     // Leftover files are cleaned up after a rejected upload.
     const files = await import("node:fs/promises").then((fs) => fs.readdir(join(s.dataDir, "notes", "alice", n.id)));
     assert.ok(!files.some((f) => f.endsWith(".upload")));
