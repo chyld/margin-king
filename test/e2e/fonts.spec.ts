@@ -307,3 +307,23 @@ test("mixed selections: text, inline code and a block each take what they can (D
   expect(await raw(page)).toBe("=={font-liberation-mono}intro==\n```font-liberation-mono\ncode\n```\n=={font-liberation-mono}end==");
   expect(await family(page, ".cm-cb-body")).toMatch(/^"?margin-font-liberation-mono"?,/);
 });
+
+test("the ring opens on a checked font the list can't apply, where Enter does nothing (Grok code r1 #7)", async ({ page }) => {
+  await login(page);
+  await newNoteWith(page, "see =={font-liberation-sans}`x`== here");
+  await select(page, 29, 30);
+  await expect(page.locator(".fmt-popup")).toBeVisible();
+  await page.keyboard.press("ArrowDown"); // B
+  await page.keyboard.press("ArrowDown"); // Link
+  await page.keyboard.press("ArrowRight"); // Font
+  await page.keyboard.press("Enter");
+  const checked = page.locator(".fmt-font-item", { hasText: "Liberation Sans (not for code)" });
+  await expect(checked).toHaveClass(/is-focus/);
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("see =={font-liberation-sans}`x`== here");
+  await expect(page.locator(".fmt-font-list")).toBeVisible();
+  // Default is one step up, and does apply.
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("see `x` here");
+});

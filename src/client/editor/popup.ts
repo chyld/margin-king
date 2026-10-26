@@ -29,6 +29,9 @@ interface FontItem {
   el: HTMLButtonElement;
   font: string | null;
   mono: boolean;
+  /** A font the list shows but can't apply (not installed, or not for code): the ring can rest
+   *  on it, and Enter does nothing there. */
+  disabled: boolean;
 }
 
 let lastPointer = "mouse";
@@ -231,7 +234,7 @@ class Popup {
       el.classList.toggle("is-current", on);
       el.setAttribute("aria-selected", String(on));
       list.appendChild(el);
-      if (!disabled) this.listItems.push({ el, font, mono });
+      this.listItems.push({ el, font, mono, disabled });
     };
     add("Default", null, false, "");
     // Fonts the target has that the list can't offer, so the selection's fonts are all shown: one
@@ -255,6 +258,7 @@ class Popup {
   }
 
   private pickFont(item: FontItem, keyboard: boolean): void {
+    if (item.disabled) return;
     if (this.apply({ type: "font", font: item.font, mono: item.mono })) {
       this.setList(false);
       if (keyboard) this.focus = this.fontCellFocus();

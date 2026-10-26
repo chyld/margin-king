@@ -80,3 +80,20 @@ review resize-r1, Sonnet #6), not a font problem.
 | 6 | The path-traversal route test is vacuous: `fetch` resolves the dots before sending | Fixed: those paths are sent raw with `http.request`, with encoded variants |
 | 7 | No browser test of mixed selections | Added: text plus inline code, and text plus a block, with both kinds of font, the computed fonts and the kept selection |
 | 8 | `fontable` and `fonts` aren't in the docs | Fixed (§15 Fonts, `formatState`) |
+
+## Grok 4.7 — 12 findings
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Unbounded decompression and reads | Already fixed (Sol #1) |
+| 2 | Symlinked `monospace/` or `other/`, and file symlinks followed when read | Already fixed (Sol #2) |
+| 3 | A selection ending at the next line's start (or starting on a line with nothing selected) loses the block | Already fixed (Sol #3; both cases are in the unit tests) |
+| 4 | Enter in a list opened by mouse replaces the selection with a line break | Already fixed (MiniMax #3) |
+| 5 | Mac Roman names decoded as Latin-1 | Already fixed (Sol #5) |
+| 6 | With no fonts installed, a mixed selection hides the Font button | Already fixed (Sol #4) |
+| 7 | Code alone, stored in an "other" font: nothing is checked, and the ring opens on Default, where Enter removes the font | Fixed: that font is listed, checked and disabled (DeepSeek #5), and the ring now opens on it; Enter does nothing there |
+| 8 | A first font word leaves a space; the rest of the fence line isn't checked | Already fixed (Muse #4) |
+| 9 | A list opened before the fonts arrive isn't rebuilt | Already fixed (Muse #7) |
+| 10 | The second read checks only the family | Already fixed (Muse #3) |
+| 11 | Windows symbol names rank ahead of Mac Roman | Already fixed (MiniMax #8) |
+| 12 | `document.fonts.check` passes with no faces | Already fixed (Sol #6) |

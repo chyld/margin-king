@@ -1432,7 +1432,8 @@ picked code fonts show their ligatures; a word in another font with no color get
     `fontMixed`. Every font in the target (`fonts`) that the list doesn't offer is listed after
     Default, disabled (checked if it's the current font): "`<id>` (not installed)", or, for a
     `codeOnly` target, "`<name>` (not for code)" (an "other" font, which code shows in the default
-    font). The open list is built again when the target's fonts change under it (an undo) or the
+    font). The ring can rest on these, and opens on one that's checked, but Enter does nothing
+    there. The open list is built again when the target's fonts change under it (an undo) or the
     installed fonts arrive. The list scrolls past about 6 entries (about 4 when docked), with
     `touch-action: pan-y` and `overscroll-behavior: contain`.
   - Picking an entry applies the operation and closes the list; the popup stays, with the same text
