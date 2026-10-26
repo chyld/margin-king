@@ -395,7 +395,8 @@ always writes `\n`.)
    stops and the rest is ordinary lines (an unclosed fence is plain text).
 2. **Headings**, among lines not in a block: `^## \{(<color>)\} (?=\S)` with a known color. Each
    heading starts a section that runs to the line before the next heading, or to the last line.
-3. **Screenshots**, among lines not in a block: `^!\[\]\(([a-z0-9]{8}\.png)\)$`.
+3. **Screenshots**, among lines not in a block: `^!\[(?:(100|[1-9][0-9])%)?\]\(([a-z0-9]{8}\.png)\)$`
+   (the optional width is the owner's resizing addition, §15).
 4. Everything else is `text`.
 
 Each line: `{ index, from, to, kind, block?, section?, heading?: { color, prefixLen }, image? }`.
@@ -1184,3 +1185,23 @@ palette button's icon is a line-drawn highlighter over a coral → amber → min
 instead of a palette with four paint dots (README §4.6). The end-of-file marker keeps README §3.12's
 shape, but its three dots are violet, magenta and orange (the brand gradient), and it's laid out so
 only the lines stretch: the end diamonds stay square at any width.
+
+**Resizing screenshots** (owner request, 2026-10-26; built, then code-reviewed by beta). The PNG never
+changes; only how wide it's shown.
+
+- **Syntax.** The width goes in the screenshot line's empty brackets: `![60%](a7p2xq9d.png)`, a
+  whole percent from 10 to 100 of the text column's width. `![](name.png)` is still the natural size
+  (full width at most). The whole-line rule is unchanged; any other text in the brackets (`![5%]`,
+  `![60]`, `![060%]`) means the line isn't a screenshot. The shared parser (`matchImage`) gives the
+  name and the width, so the server, `doctor`, search and the title treat both forms alike, and the
+  width travels with copy and paste, undo and redo, and is plain text in raw mode.
+- **Display.** A sized screenshot is that share of the column wide (larger than its pixels if asked),
+  its height following its aspect ratio, left-aligned like text.
+- **Handle.** In render mode, on an editable note, a slim pill on the image's right edge shows on
+  hover, or after a tap on the image on a touch screen (until a tap elsewhere). Dragging it resizes the
+  image live with a "60%" label, clamped to 10–100%; letting go writes the width into the line as one
+  `bypass` transaction (`input.resize`, its own undo step via `isolateHistory`). Esc during a drag
+  cancels it. Double-clicking the handle writes `![](name.png)`. The widget keeps the same `<img>`
+  when only the width changes (`updateDOM`), so nothing reloads or flickers. Read-only notes have no
+  handle.
+

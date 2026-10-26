@@ -45,8 +45,9 @@ export interface Line {
   /** Headings: the section color and the length of `## {color} `. */
   color?: string;
   prefixLen?: number;
-  /** Screenshot lines: the image name. */
+  /** Screenshot lines: the image name, and its width in % of the text column (null: natural size). */
   image?: string;
+  imageWidth?: number | null;
 }
 
 export interface Block {
@@ -71,7 +72,8 @@ export interface Doc {
 export const OPEN_FENCE_RE = /^```/;
 export const CLOSE_FENCE_RE = /^```[ \t]*$/;
 const HEADING_RE = /^## \{([a-z]+(?:-deep)?)\} (?=\S)/;
-const IMAGE_RE = /^!\[\]\(([a-z0-9]{8}\.png)\)$/;
+// `![](name.png)`, or `![60%](name.png)` for a width of 10–100% of the text column (owner decision).
+const IMAGE_RE = /^!\[(?:(100|[1-9][0-9])%)?\]\(([a-z0-9]{8}\.png)\)$/;
 const LINK_RE = /^\[([^\]\n]+)\]\((https?:\/\/[^\s<>()[\]`]+)\)/;
 const URL_RE = /^https?:\/\/[^\s<>()[\]`]+/;
 const URL_TRAILING = /[.,;:!?'"*_~=]+$/;
@@ -122,9 +124,17 @@ export function matchHeading(text: string): { color: string; prefixLen: number }
   return { color: m[1], prefixLen: m[0].length };
 }
 
-export function matchImage(text: string): string | null {
+export const MIN_IMAGE_WIDTH = 10;
+export const MAX_IMAGE_WIDTH = 100;
+
+export function matchImage(text: string): { name: string; width: number | null } | null {
   const m = IMAGE_RE.exec(text);
-  return m ? m[1] : null;
+  return m ? { name: m[2], width: m[1] ? Number(m[1]) : null } : null;
+}
+
+/** A screenshot line; `width` null is the natural size. */
+export function imageLine(name: string, width: number | null): string {
+  return `![${width === null ? "" : `${width}%`}](${name})`;
 }
 
 export function parseDoc(input: string): Doc {
@@ -172,7 +182,8 @@ export function parseDoc(input: string): Doc {
     const image = matchImage(line.text);
     if (image) {
       line.kind = "image";
-      line.image = image;
+      line.image = image.name;
+      line.imageWidth = image.width;
     }
   }
 

@@ -37,3 +37,25 @@ export async function newNoteWith(page: Page, text: string): Promise<string> {
   await expect(page.locator(".save")).toHaveAttribute("data-state", "saved");
   return page.evaluate(() => (window as any).margin.store.get().open.summary.id);
 }
+
+/** A new note `before / screenshot / after`, with a real 400×200 PNG uploaded; returns the image name. */
+export async function newNoteWithShot(page: Page, size = ""): Promise<string> {
+  const id = await newNoteWith(page, "x");
+  const name: string = await page.evaluate(async (noteId) => {
+    const c = document.createElement("canvas");
+    c.width = 400;
+    c.height = 200;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#7c5cff";
+    g.fillRect(0, 0, 400, 200);
+    const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
+    const res = await fetch(`/api/notes/${noteId}/images`, { method: "POST", headers: { "X-Margin": "1", "Content-Type": "image/png" }, body: blob });
+    return (await res.json()).name;
+  }, id);
+  await page.evaluate((t) => {
+    const view = (window as any).margin.view;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: t } });
+  }, `before\n![${size}](${name})\nafter`);
+  await expect.poll(() => page.locator(".cm-shot img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(400);
+  return name;
+}

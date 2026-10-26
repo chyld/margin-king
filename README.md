@@ -7,7 +7,10 @@ edit it in either. There's no database: every note is a folder of files on disk.
 port 5555.
 
 - What Margin does, in full: [`docs/original-readme.md`](docs/original-readme.md) (the specification
-  this build follows; its §5 describes an earlier build).
+  this build follows; its §5 describes an earlier build). Changes and additions the owner made since
+  are listed in [architecture §15](docs/architecture.md#15-features-beyond-the-readme-owner-decisions),
+  among them **resizing screenshots**: drag the handle on a screenshot's right edge (or tap the image
+  first on a touch screen); double-click the handle for the original size.
 - How this build works: [`docs/architecture.md`](docs/architecture.md), with the review history in
   [`docs/reviews/`](docs/reviews/).
 

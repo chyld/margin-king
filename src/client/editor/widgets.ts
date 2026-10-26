@@ -3,6 +3,7 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { analysisField, bypass, noteFacet, toggleSection } from "./fields.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { applyWidth, setImageWidth, startResize } from "./resize.ts";
 
 function toggle(view: EditorView, key: string): void {
   view.dispatch({ effects: toggleSection.of(key), annotations: bypass.of(true) });
@@ -63,18 +64,38 @@ export class EllipsisWidget extends WidgetType {
   }
 }
 
+function showHandle(wrap: HTMLElement): void {
+  if (wrap.classList.contains("is-active")) return;
+  wrap.classList.add("is-active");
+  const away = (e: PointerEvent) => {
+    if (wrap.contains(e.target as Node)) return;
+    wrap.classList.remove("is-active");
+    document.removeEventListener("pointerdown", away, true);
+  };
+  document.addEventListener("pointerdown", away, true);
+}
+
 export class ImageWidget extends WidgetType {
   name: string;
-  constructor(name: string) {
+  width: number | null;
+  constructor(name: string, width: number | null) {
     super();
     this.name = name;
+    this.width = width;
   }
   eq(other: ImageWidget): boolean {
-    return other.name === this.name;
+    return other.name === this.name && other.width === this.width;
+  }
+  /** A new width keeps the same image element (no reload, no flicker). */
+  updateDOM(dom: HTMLElement): boolean {
+    if (dom.dataset.name !== this.name) return false;
+    applyWidth(dom, this.width);
+    return true;
   }
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "cm-shot";
+    wrap.dataset.name = this.name;
     const note = view.state.facet(noteFacet);
     const img = document.createElement("img");
     img.alt = "Screenshot";
@@ -85,16 +106,31 @@ export class ImageWidget extends WidgetType {
       missing.className = "cm-shot-missing";
       missing.textContent = "Missing screenshot";
       img.replaceWith(missing);
+      handle.remove();
       view.requestMeasure();
     });
-    wrap.appendChild(img);
+    const handle = document.createElement("span");
+    handle.className = "cm-shot-handle";
+    handle.title = "Drag to resize · double-click for the original size";
+    handle.addEventListener("pointerdown", (e) => startResize(view, wrap, handle, e));
+    handle.addEventListener("dblclick", (e) => {
+      e.preventDefault();
+      setImageWidth(view, wrap, null);
+    });
+    // Touch screens have no hover: a tap on the image shows its handle until a tap elsewhere.
+    wrap.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "mouse" && e.target !== handle) showHandle(wrap);
+    });
+    wrap.append(img, handle);
+    applyWidth(wrap, this.width);
     return wrap;
   }
   get estimatedHeight(): number {
     return 160;
   }
-  ignoreEvent(): boolean {
-    return false;
+  /** The editor handles clicks on the image (placing the caret), not on the resize handle. */
+  ignoreEvent(e: Event): boolean {
+    return !!(e.target as Element | null)?.closest?.(".cm-shot-handle");
   }
 }
 

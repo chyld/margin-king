@@ -1025,7 +1025,10 @@ button {
 
 /* Screenshots */
 .cm-shot {
+  position: relative;
   display: block;
+  width: fit-content;
+  max-width: 100%;
   padding: 6px 0;
 }
 .cm-shot img {
@@ -1033,6 +1036,63 @@ button {
   max-width: 100%;
   border-radius: 10px;
   box-shadow: var(--shadow-md);
+}
+/* A resized screenshot (`![60%](name.png)`): a share of the text column, larger than natural if asked. */
+.cm-shot.is-sized img {
+  width: 100%;
+}
+.cm-shot-handle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 6px;
+  height: min(44px, 40%);
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: rgba(24, 20, 48, 0.62);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.92), 0 2px 6px rgba(20, 16, 40, 0.2);
+  cursor: ew-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+/* A bigger target than the pill. */
+.cm-shot-handle::before {
+  content: "";
+  position: absolute;
+  inset: -10px -12px;
+}
+@media (hover: hover) {
+  .cm-shot:hover .cm-shot-handle {
+    opacity: 1;
+  }
+}
+.cm-shot.is-active .cm-shot-handle,
+.cm-shot.is-resizing .cm-shot-handle {
+  opacity: 1;
+}
+.cm-content[contenteditable="false"] .cm-shot-handle {
+  display: none;
+}
+@media (pointer: coarse) {
+  .cm-shot-handle {
+    width: 8px;
+    height: min(56px, 45%);
+  }
+}
+.cm-shot.is-resizing {
+  user-select: none;
+}
+.cm-shot-size {
+  position: absolute;
+  top: 14px;
+  right: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(24, 20, 48, 0.72);
+  color: #fff;
+  font: 600 12px/18px var(--ui);
+  pointer-events: none;
 }
 .cm-shot-missing {
   color: var(--muted);

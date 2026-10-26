@@ -166,3 +166,22 @@ test("visible text, titles", () => {
   assert.equal(noteTitle("![](a7p2xq9d.png)"), "");
   assert.equal(noteTitle("  spaced  "), "spaced");
 });
+
+test("screenshot lines may carry a width of 10–100% (owner decision)", async () => {
+  const { imageLine, matchImage } = await import("../../src/shared/syntax.ts");
+  assert.deepEqual(matchImage("![](a7p2xq9d.png)"), { name: "a7p2xq9d.png", width: null });
+  assert.deepEqual(matchImage("![60%](a7p2xq9d.png)"), { name: "a7p2xq9d.png", width: 60 });
+  assert.deepEqual(matchImage("![10%](a7p2xq9d.png)"), { name: "a7p2xq9d.png", width: 10 });
+  assert.deepEqual(matchImage("![100%](a7p2xq9d.png)"), { name: "a7p2xq9d.png", width: 100 });
+  for (const bad of ["![5%](a7p2xq9d.png)", "![101%](a7p2xq9d.png)", "![060%](a7p2xq9d.png)", "![60](a7p2xq9d.png)", "![60 %](a7p2xq9d.png)", "x ![60%](a7p2xq9d.png)"]) {
+    assert.equal(matchImage(bad), null, bad);
+  }
+  assert.equal(imageLine("a7p2xq9d.png", 45), "![45%](a7p2xq9d.png)");
+  assert.equal(imageLine("a7p2xq9d.png", null), "![](a7p2xq9d.png)");
+  const doc = parseDoc("a\n![45%](a7p2xq9d.png)\n```\n![45%](a7p2xq9d.png)\n```");
+  assert.equal(doc.lines[1].kind, "image");
+  assert.equal(doc.lines[1].imageWidth, 45);
+  assert.equal(doc.lines[3].kind, "code");
+  assert.equal(noteTitle("![45%](a7p2xq9d.png)\nNext"), noteTitle("![](a7p2xq9d.png)\nNext"));
+  assert.equal(visibleText("![45%](a7p2xq9d.png)"), visibleText("![](a7p2xq9d.png)"));
+});

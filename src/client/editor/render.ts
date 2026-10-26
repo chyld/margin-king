@@ -103,7 +103,7 @@ function build(state: EditorState): RenderData {
         break;
       case "image":
         lineClasses.push("cm-shot-line");
-        decos.push(Decoration.replace({ widget: new ImageWidget(line.image!) }).range(line.from, line.to));
+        decos.push(Decoration.replace({ widget: new ImageWidget(line.image!, line.imageWidth ?? null) }).range(line.from, line.to));
         break;
     }
     if (lineClasses.length) decos.push(Decoration.line({ class: lineClasses.join(" ") }).range(line.from));
