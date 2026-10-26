@@ -24,9 +24,17 @@ async function drag(page: Page, dx: number, opts: { cancel?: boolean; nth?: numb
   await page.mouse.up();
 }
 
+/** The screenshot file's bytes, as the server has them (hex SHA-256). */
+const fileHash = (page: Page) =>
+  page.locator(".cm-shot img").evaluate(async (img: HTMLImageElement) => {
+    const bytes = await (await fetch(img.src, { cache: "no-store" })).arrayBuffer();
+    return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  });
+
 test("dragging the handle writes the width; the file and the image element stay", async ({ page }) => {
   const name = await newNoteWithShot(page);
   const column = await columnWidth(page);
+  const before = await fileHash(page);
   expect(await shotWidth(page)).toBeCloseTo(400, 0);
   const img = await page.locator(".cm-shot img").elementHandle();
   await drag(page, 200);
@@ -35,6 +43,12 @@ test("dragging the handle writes the width; the file and the image element stay"
   expect(Math.abs((await shotWidth(page)) - (column * pct) / 100)).toBeLessThan(1);
   // The same <img>: no reload or flicker.
   expect(await page.evaluate((el) => el!.isConnected, img)).toBe(true);
+  // The PNG itself never changes, byte for byte, saved or not (GLM resize #1).
+  expect(await fileHash(page)).toBe(before);
+  await page.evaluate(() => (window as any).margin.view.focus());
+  await page.keyboard.press("Control+s");
+  await expect(page.locator(".save")).toHaveAttribute("data-state", "saved");
+  expect(await fileHash(page)).toBe(before);
   // One undo step puts it back.
   await page.evaluate(() => (window as any).margin.view.focus());
   await page.keyboard.press("Control+z");

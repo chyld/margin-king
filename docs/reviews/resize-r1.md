@@ -65,3 +65,12 @@ Commit reviewed: `d7d46ee` (the owner's resize feature, architecture §15). One 
 | 5 | `imageLine` can write a width the parser rejects | Fixed: it rounds and keeps the width to 10–100, so its output always reads back as a screenshot; unit-tested |
 | 6 | Dropping the content's `min-height` during a drag collapses its box | Not adopted: only while a drag holds the pointer (pointer capture), restored on release; a note shorter than the window can't scroll, and a taller one's height doesn't depend on the min-height |
 | 7 | No test reaches the saved file, `doctor` or copy of a sized line | Save and reopen was added (DeepSeek #6); added a `doctor` case and a copy case with a sized screenshot |
+
+## GLM-5.3 Flash — ship (2 findings, reviewed at `7e44f65`)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Nothing proves the PNG is untouched, byte for byte | Added: the drag test hashes the file through the API before the drag, after it, and after saving |
+| 2 | `doctor` isn't tested with a sized screenshot line | Already added (MiniMax #7) |
+
+All eight reviews are in. Every finding that held up is fixed and tested; one was declined (MiniMax #6), and one was a test-tool artifact (Sonnet #6).
