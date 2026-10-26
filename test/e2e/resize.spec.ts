@@ -1,16 +1,16 @@
 // Resizing screenshots (owner decision, architecture §15): a drag handle writes `![60%](name.png)`.
 
 import { expect, test, type Page } from "@playwright/test";
-import { login, newNoteWithShot, raw } from "./helpers.ts";
+import { login, newNoteWith, newNoteWithShot, raw, setText, uploadShot } from "./helpers.ts";
 
 test.beforeEach(async ({ page }) => login(page));
 
 const columnWidth = (page: Page) => page.locator(".cm-shot-line").evaluate((l) => l.clientWidth);
 const shotWidth = (page: Page) => page.locator(".cm-shot").evaluate((w) => w.getBoundingClientRect().width);
 
-async function drag(page: Page, dx: number, opts: { cancel?: boolean } = {}) {
-  await page.locator(".cm-shot img").hover();
-  const handle = page.locator(".cm-shot-handle");
+async function drag(page: Page, dx: number, opts: { cancel?: boolean; nth?: number } = {}) {
+  await page.locator(".cm-shot img").nth(opts.nth ?? 0).hover();
+  const handle = page.locator(".cm-shot-handle").nth(opts.nth ?? 0);
   await expect(handle).toHaveCSS("opacity", "1");
   const box = (await handle.boundingBox())!;
   const x = box.x + box.width / 2;
@@ -176,4 +176,49 @@ test("the drawn caret follows the text while an image is resized (Sol resize #3)
     });
   await expect.poll(gap).toBeLessThan(3);
   await page.mouse.up();
+});
+
+test("a screenshot narrower than 10% stays put until dragged past it (Muse resize #1)", async ({ page }) => {
+  const name = await newNoteWithShot(page, "", [40, 20]);
+  const column = await columnWidth(page);
+  await drag(page, -10);
+  expect(await raw(page)).toBe(`before\n![](${name})\nafter`);
+  expect(await shotWidth(page)).toBeCloseTo(40, 0);
+  await drag(page, 5);
+  expect(await raw(page)).toBe(`before\n![](${name})\nafter`);
+  await drag(page, 120);
+  await expect.poll(() => raw(page)).toBe(`before\n![${Math.round((160 / column) * 100)}%](${name})\nafter`);
+});
+
+test("the second of two screenshots resizes alone (Muse resize #3)", async ({ page }) => {
+  const id = await newNoteWith(page, "x");
+  const one = await uploadShot(page, id);
+  const two = await uploadShot(page, id);
+  await setText(page, `a\n![](${one})\nb\n![](${two})\nc`);
+  await expect(page.locator(".cm-shot img")).toHaveCount(2);
+  await expect.poll(() => page.locator(".cm-shot img").nth(1).evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(400);
+  await drag(page, -100, { nth: 1 });
+  await expect.poll(() => raw(page)).toMatch(new RegExp(`^a\\n!\\[\\]\\(${one}\\)\\nb\\n!\\[\\d+%\\]\\(${two}\\)\\nc$`.replaceAll(".png", "\\.png")));
+});
+
+test("in a colored section the width is a share of the section's text column (Muse resize #3)", async ({ page }) => {
+  const id = await newNoteWith(page, "x");
+  const name = await uploadShot(page, id);
+  await setText(page, `## {red} Section\n![](${name})\nafter`);
+  await expect.poll(() => page.locator(".cm-shot img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(400);
+  const column = await page.locator(".cm-shot-line").evaluate((l) => {
+    const s = getComputedStyle(l);
+    return l.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+  });
+  await drag(page, 100);
+  const pct = Math.round((500 / column) * 100);
+  await expect.poll(() => raw(page)).toBe(`## {red} Section\n![${pct}%](${name})\nafter`);
+  expect(Math.abs((await shotWidth(page)) - (column * pct) / 100)).toBeLessThan(1);
+});
+
+test("a missing screenshot has no resize handle (Muse resize #3)", async ({ page }) => {
+  await newNoteWith(page, "x");
+  await setText(page, "before\n![50%](zzzzzzzz.png)\nafter");
+  await expect(page.locator(".cm-shot-missing")).toHaveText("Missing screenshot");
+  await expect(page.locator(".cm-shot-handle")).toHaveCount(0);
 });

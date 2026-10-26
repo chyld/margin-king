@@ -49,7 +49,8 @@ const lastTap = new WeakMap<HTMLElement, number>();
  * note switch, or scrolled out of the rendered range), the drag ends without writing.
  */
 export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLElement, e: PointerEvent): void {
-  if (e.button !== 0 || view.state.readOnly) return;
+  // One drag at a time: a second finger or a stylus on the same handle doesn't start another.
+  if (e.button !== 0 || !e.isPrimary || view.state.readOnly || wrap.classList.contains("is-resizing")) return;
   const line = wrap.closest<HTMLElement>(".cm-line");
   if (!line) return;
   e.preventDefault();
@@ -61,13 +62,17 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
   const startX = e.clientX;
   const startPx = wrap.getBoundingClientRect().width;
   const clamp = (n: number) => Math.min(MAX_IMAGE_WIDTH, Math.max(MIN_IMAGE_WIDTH, n));
-  let width = clamp(Math.round((startPx / column) * 100));
+  // A natural-size screenshot can be narrower than the smallest width: it stays as it is (and
+  // nothing is written) until it's dragged past that, rather than jumping to it.
+  const startPct = (startPx / column) * 100;
+  const below = (pct: number) => pct < MIN_IMAGE_WIDTH && startPct < MIN_IMAGE_WIDTH;
+  let width: number | null = below(startPct) ? null : clamp(Math.round(startPct));
   let dx = 0;
   let moved = false;
 
   const label = document.createElement("span");
   label.className = "cm-shot-size";
-  label.textContent = `${width}%`;
+  label.textContent = `${width ?? Math.max(1, Math.round(startPct))}%`;
   wrap.appendChild(label);
   wrap.classList.add("is-resizing");
   handle.setPointerCapture(e.pointerId);
@@ -84,7 +89,7 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
     view.requestMeasure();
     if (!commit || !wrap.isConnected) return;
     if (moved && Math.abs(dx) >= threshold) {
-      setImageWidth(view, wrap, width);
+      if (width !== null) setImageWidth(view, wrap, width);
     } else if (touch) {
       const now = performance.now();
       if (now - (lastTap.get(wrap) ?? -Infinity) < 400) {
@@ -104,9 +109,10 @@ export function startResize(view: EditorView, wrap: HTMLElement, handle: HTMLEle
       dx = ev.clientX - startX;
       if (!moved && Math.abs(dx) < threshold) return;
       moved = true;
-      width = clamp(Math.round(((startPx + dx) / column) * 100));
-      applyWidth(wrap, width);
-      label.textContent = `${width}%`;
+      const pct = Math.round(((startPx + dx) / column) * 100);
+      width = below(pct) ? null : clamp(pct);
+      applyWidth(wrap, width ?? lineWidth(wrap));
+      label.textContent = `${width ?? Math.max(1, Math.round(startPct))}%`;
       // The lines below move: CodeMirror's height map and drawn caret follow.
       view.requestMeasure();
     },

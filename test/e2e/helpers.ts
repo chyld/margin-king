@@ -38,24 +38,37 @@ export async function newNoteWith(page: Page, text: string): Promise<string> {
   return page.evaluate(() => (window as any).margin.store.get().open.summary.id);
 }
 
-/** A new note `before / screenshot / after`, with a real 400×200 PNG uploaded; returns the image name. */
-export async function newNoteWithShot(page: Page, size = ""): Promise<string> {
-  const id = await newNoteWith(page, "x");
-  const name: string = await page.evaluate(async (noteId) => {
-    const c = document.createElement("canvas");
-    c.width = 400;
-    c.height = 200;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#7c5cff";
-    g.fillRect(0, 0, 400, 200);
-    const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
-    const res = await fetch(`/api/notes/${noteId}/images`, { method: "POST", headers: { "X-Margin": "1", "Content-Type": "image/png" }, body: blob });
-    return (await res.json()).name;
-  }, id);
+/** Uploads a real PNG of that size to the note; returns its name. */
+export function uploadShot(page: Page, noteId: string, width = 400, height = 200): Promise<string> {
+  return page.evaluate(
+    async ({ noteId, width, height }) => {
+      const c = document.createElement("canvas");
+      c.width = width;
+      c.height = height;
+      const g = c.getContext("2d")!;
+      g.fillStyle = "#7c5cff";
+      g.fillRect(0, 0, width, height);
+      const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
+      const res = await fetch(`/api/notes/${noteId}/images`, { method: "POST", headers: { "X-Margin": "1", "Content-Type": "image/png" }, body: blob });
+      return (await res.json()).name as string;
+    },
+    { noteId, width, height },
+  );
+}
+
+/** Replaces the open note's text (through the editor, like typing would). */
+export async function setText(page: Page, text: string): Promise<void> {
   await page.evaluate((t) => {
     const view = (window as any).margin.view;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: t } });
-  }, `before\n![${size}](${name})\nafter`);
-  await expect.poll(() => page.locator(".cm-shot img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(400);
+  }, text);
+}
+
+/** A new note `before / screenshot / after`, with a real PNG (400×200 by default); returns its name. */
+export async function newNoteWithShot(page: Page, size = "", dims: [number, number] = [400, 200]): Promise<string> {
+  const id = await newNoteWith(page, "x");
+  const name = await uploadShot(page, id, ...dims);
+  await setText(page, `before\n![${size}](${name})\nafter`);
+  await expect.poll(() => page.locator(".cm-shot img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(dims[0]);
   return name;
 }

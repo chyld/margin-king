@@ -100,6 +100,17 @@ test("headings: Enter at the start of the text breaks before the line", () => {
   assert.equal(ent("## {red} Title‸"), "## {red} Title\n‸");
 });
 
+test("a sized screenshot line is the same unit as any other (Muse resize #3)", () => {
+  assert.equal(bs("a\n![60%](a7p2xq9d.png)\n‸b"), "a\n‸b");
+  assert.equal(bs("a\n![60%](a7p2xq9d.png)‸\nb"), "a\n‸b");
+  assert.equal(dl("a‸\n![60%](a7p2xq9d.png)\nb"), "a‸\nb");
+  assert.equal(dl("a\n‸![60%](a7p2xq9d.png)\nb"), "a\n‸b");
+  assert.equal(bs("a\n‸![60%](a7p2xq9d.png)"), "a‸\n![60%](a7p2xq9d.png)");
+  assert.equal(ent("![60%](a7p2xq9d.png)‸"), "![60%](a7p2xq9d.png)\n‸");
+  assert.equal(type("![60%](a7p2xq9d.png)‸", "hi"), "![60%](a7p2xq9d.png)\nhi‸");
+  assert.equal(cut("Intro«\n»![60%](a7p2xq9d.png)"), "Intro‸\n![60%](a7p2xq9d.png)");
+});
+
 test("screenshot lines", () => {
   assert.equal(bs("a\n![](a7p2xq9d.png)\n‸b"), "a\n‸b");
   assert.equal(bs("a\n![](a7p2xq9d.png)‸\nb"), "a\n‸b");
