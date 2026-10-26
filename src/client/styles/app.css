@@ -922,9 +922,6 @@ button {
   color: var(--heading);
   padding-top: 6px;
 }
-.mode-render .cm-heading.cm-title {
-  font-size: 1.9em;
-}
 .cm-fold {
   display: inline-grid;
   place-items: center;

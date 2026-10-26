@@ -172,3 +172,27 @@ test("bold over mixed lines makes both bold; part of a link can be bold (Sol r1 
   await page.getByRole("button", { name: "Bold", exact: true }).click();
   expect(await raw(page)).toBe("[d](https://a.com)=={b}[o](https://a.com)==[cs](https://a.com)");
 });
+
+test("after Enter applies a popup option, the focus ring stays for the next one (Muse r1 #5)", async ({ page }) => {
+  await newNoteWith(page, "x word y");
+  await select(page, 2, 6);
+  await expect(page.locator(".fmt-popup")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("x =={b}word== y");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  expect(await raw(page)).toBe("x =={b+u}word== y");
+});
+
+test("space in the tag box adds what was typed, not the suggestion (Muse r1 #6)", async ({ page }) => {
+  await newNoteWith(page, "Has alpha");
+  await page.click(".tag-box");
+  await page.keyboard.type("alpha");
+  await page.keyboard.press("Enter");
+  await newNoteWith(page, "Typed tag");
+  await page.click(".tag-box");
+  await page.keyboard.type("alp");
+  await page.keyboard.press(" ");
+  await expect(page.locator(".tag-chips .chip")).toHaveText(["alp×"]);
+});

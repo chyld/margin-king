@@ -292,3 +292,12 @@ describe("CLI lock (code review r1)", () => {
     assert.ok(Date.now() - t < 5000, "the next command didn't wait for a leftover lock");
   });
 });
+
+describe("usernames (code review r1)", () => {
+  test("__proto__ is an ordinary username", async () => {
+    assert.equal((await cli(s.dataDir, ["add", "__proto__"], "pw1234")).code, 0);
+    const users = JSON.parse(await readFile(join(s.dataDir, "users.json"), "utf8"));
+    assert.ok(Object.hasOwn(users, "__proto__"));
+    assert.equal(await new Client(s.base).login("__proto__", "pw1234"), 200);
+  });
+});

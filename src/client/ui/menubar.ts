@@ -110,7 +110,9 @@ export function mountMenubar(store: Store, actions: Actions): void {
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " " || e.key === ",") {
       e.preventDefault();
-      const pick = highlighted >= 0 && current[highlighted] ? current[highlighted].tag : box.value;
+      // Enter takes the highlighted suggestion (so alp + Enter adds alpha); space and comma add
+      // what was typed (README §3.13).
+      const pick = e.key === "Enter" && highlighted >= 0 && current[highlighted] ? current[highlighted].tag : box.value;
       if (pick) addTag(pick);
     } else if (e.key === "Backspace" && !box.value) {
       const tags = tagsOfNote();

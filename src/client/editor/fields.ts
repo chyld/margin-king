@@ -40,6 +40,8 @@ export const collapsedField = StateField.define<ReadonlySet<string>>({
         if (line.kind !== "heading" || !next.has(line.text)) continue;
         const touched = tr.changes.touchesRange(line.from, line.to);
         if (!touched) continue;
+        // The prefix must survive: deleting or replacing the heading line isn't a rename.
+        if (tr.changes.touchesRange(line.from, line.from + line.prefixLen!)) continue;
         const pos = tr.changes.mapPos(line.from, 1);
         const newLine = tr.newDoc.lineAt(Math.min(pos, tr.newDoc.length));
         if (newLine.text !== line.text && matchHeading(newLine.text)) renames.push([line.text, newLine.text]);

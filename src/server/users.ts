@@ -38,13 +38,16 @@ export async function readUsers(dataDir: string): Promise<Users> {
   try {
     text = await readFile(usersPath(dataDir), "utf8");
   } catch (err) {
-    if (isNotFound(err)) return {};
+    if (isNotFound(err)) return Object.create(null) as Users;
     throw err;
   }
   try {
     const data: unknown = JSON.parse(text);
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("not an object");
-    return data as Users;
+    // A null-prototype object, so any valid username (even __proto__) is an ordinary key.
+    const users: Users = Object.create(null);
+    for (const [name, record] of Object.entries(data)) users[name] = record as UserRecord;
+    return users;
   } catch (err) {
     throw new UsersFileError(`${usersPath(dataDir)} is not valid JSON (${(err as Error).message})`);
   }

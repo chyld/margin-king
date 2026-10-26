@@ -21,3 +21,18 @@ become regression tests in `test/e2e/regressions.spec.ts`, the unit tests and th
 | 10 | Any deletion ending at the caret is treated as one Backspace | Fixed: key-shaped only for at most one visible grapheme |
 | 11 | Typing at a collapsed heading's end doesn't expand it (rename ran before the expansion) | Fixed: expansions apply before heading renames |
 | 12 | Unwrapping a code block collapses the selection | Fixed: the selection is mapped through the fence removal; unit test corrected |
+
+## Muse Wonder 1.0 — fix first (10 findings)
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Empty trash count is the filtered list | Already fixed (Sol #3) |
+| 2 | Failed `margin-user remove` leaves the lock | Already fixed (Sol #6) |
+| 3 | Trash / Delete-forever completion closes another note | Already fixed (Sol #1) |
+| 4 | A load superseded by the trash view leaves the editor read-only | Already fixed (Sol #9) |
+| 5 | After Enter applies a popup option, the focus ring is lost and a second Enter replaces the selection | Fixed: the ring survives the popup's own formatting |
+| 6 | Space and comma in the tag box add the highlighted suggestion | Fixed: only Enter takes the suggestion; space and comma add what was typed (README §3.13) |
+| 7 | `margin-user add __proto__` reports success but stores nothing | Fixed: users are kept in a null-prototype object |
+| 8 | Deleting a collapsed heading collapses the next section | Fixed: only edits that keep the heading prefix count as renames |
+| 9 | Unwrapping a code block drops the selection | Already fixed (Sol #12) |
+| 10 | A first-line heading doesn't get the title size | Not adopted: README §5.7 gives the title size to a plain first line only; the unused CSS rule was removed |

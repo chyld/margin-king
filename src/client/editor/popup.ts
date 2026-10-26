@@ -276,13 +276,16 @@ class Popup {
       this.say(result.reason === "select" ? "Select some text first" : "Can't apply that here");
       return;
     }
+    const focus = this.focus;
     view.dispatch({
       changes: result.changes,
       selection: EditorSelection.single(result.anchor, result.head),
       annotations: [bypass.of(true), Transaction.userEvent.of("input.format")],
       scrollIntoView: true,
     });
-    // The same visible text stays selected (or the cursor goes to the end of the word).
+    // The same visible text stays selected, and the focus ring stays, so several options can be
+    // applied in a row (README §3.6).
+    this.focus = focus;
     this.escKey = "";
     this.refresh();
   }
