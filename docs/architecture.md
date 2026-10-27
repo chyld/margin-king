@@ -1505,3 +1505,168 @@ picked code fonts show their ligatures; a word in another font with no color get
     things (a docked popup grows upward), and the click of the tap that opened it would otherwise
     land on whatever entry is now under the finger.
 - Folded into §3, §5.1, §5.2, §5.5, §6.2–6.4, §7.6, §7.8 and §10.
+
+**Typing in a formatting, and font sizes** (owner request, 2026-10-26; spec under review by beta
+before the build). Two parts: the formatting bar can set the formatting for what you type next, even
+on a blank line; and text can have a size, picked like a font. Owner decisions: with nothing
+selected, an option formats the word only when the caret is strictly inside it, and otherwise sets
+the formatting for what's typed next; Enter carries that formatting onto the new line; `</>` works
+ahead of typing too; deleting a formatted piece's last character keeps its formatting for what's
+typed next; sizes are per piece of text and saved in the note, like fonts; five steps, relative to
+the text around them; inline code and code blocks take sizes; a Size list like the font list.
+
+*Part 1: typing in a formatting*
+
+- **Typing style.** The style the engine gives text typed at a caret: the options of the highlight
+  and the inline code it's typed in (`templateAt`, §7.7), or none. A caret at a highlight's inner
+  edge is in it; at its outer edge (after →, README §3.7) it isn't. It moves to `src/shared/` as
+  `typingStyle(a, pos): Style`, so `formatState` and the engine share it.
+- **Pending style.** `{ pos, style }`, held by a new editor field `pendingField` (`fields.ts`), set
+  and cleared with a `setPending` effect, in render mode only. Text typed at `pos` gets `style`
+  instead of the typing style. It's never in the document or the undo history.
+- **Pending target** (§6.4, README §3.6). With the bar pinned, in render mode, nothing selected, and
+  the caret on a text line or in a heading's text:
+  - a caret **strictly inside a word** (a word character, `[\p{L}\p{N}_]`, visible on both sides)
+    still targets that word, and the caret goes back to the word's end (README §3.6);
+  - anywhere else (a blank line, after a space, at a word's start or end, between punctuation) the
+    target is the **pending target**: what will be typed next.
+
+  The "strictly inside" rule applies in raw mode too, which has no pending target, so there a caret
+  at a word's edge shows "Select some text first" (it used to format the word). A caret in a code
+  block still targets the block (Font, Size and `</>`); a screenshot line has no target.
+- **Options on the pending target** compute a new pending style from `base`, which is the pending
+  style if there is one, else the typing style:
+  - B, U, `</>`: toggle `b`, `u` or `code`;
+  - a swatch: sets the color, or removes it if `base` has it. In a heading it recolors the section
+    straight away (a change to the document), as it does for a word in a heading, since highlight
+    colors never show there; `base` is unchanged;
+  - Remove color: no color. Clear formatting: no color, `b`, `u`, font, size or code;
+  - a font or a size from the lists: sets it; Default removes it. If `base.code`, the target is
+    `codeOnly`, so the font list offers monospace fonts only, as for code;
+  - Link: "Select some text first" (a link needs text). Section works on the caret's line, as now.
+
+  The result is a new `FormatResult` variant, `{ ok: true, pending: Style }`. The popup dispatches
+  `setPending` with no document change; if the new style equals the typing style at the caret, the
+  pending style is cleared instead. The caret and the bar stay, and the buttons show the new state.
+- **`formatState`** takes the pending style too. For a pending target, `hasTarget` is true;
+  `bold`, `underline`, `code`, `color`, `font` and `size` come from `base`; `link` is null;
+  `fontMixed` and `sizeMixed` are false; `codeOnly` is `base.code`; `fontable` and `sizable` are
+  true; `fonts` is `base.font` if it has one. The hint reads "Applies to what you type next".
+- **Typing** (§7.7). `insertText` and `editRange` take an optional pending style. An insertion
+  exactly at the caret, at `pos`, gives its new characters the pending style instead of the
+  template's, with `hl: null` and no link (typed text leaves a link it would otherwise have
+  extended). Their inline-code token is the template's when both are code, a new one when only the
+  pending style is code. Then the usual rules run: `settleRow` makes them plain if the line wouldn't
+  re-parse as intended (an `=` beside an `=`, a backtick in code). The caret lands inside the new
+  characters' tokens (affinity `prev`), so what's typed next extends them, and the pending style is
+  dropped. New characters with the same style as the run before them join that highlight (the
+  serializer merges equal runs).
+  - It applies to typing (the keys, and the invariant filter's single insertion at the caret, §7.7
+    rule 4), to a paste at the caret (a pasted segment without syntax takes the pending style, as it
+    takes the template today; one with syntax keeps its own), and to a composition: the pending
+    style when the composition starts is kept with its snapshot and used by the repair. While
+    composing, the text shows unformatted; on Android, whose keyboards compose each word, the first
+    word takes its formatting when it's committed.
+  - It doesn't apply to an insertion that replaces a selection (a selection has no pending style), a
+    drop, or several selections.
+- **Dropped** when the caret moves (a selection whose anchor or head isn't `pos`), on any other
+  document change (an edit elsewhere, undo, redo, a formatting option), and on switching modes or
+  notes. The bar closing or the window losing focus keeps it.
+- **Carried by Enter.** `EditResult` gains `pending: Style | null`, which every dispatcher of an
+  engine result (`specOf` and the composition repair) turns into `setPending` at the new caret.
+  Enter at a caret (the key, and the filter's rule 3) sets it when the typing style there (the
+  pending style, else the enclosing highlight's) has a color, `b`, `u`, a font or a size, and the
+  caret after the break isn't in a highlight (Enter at a highlight's edge steps outside it, README
+  §3.7). Only the highlight part is carried: inline code and links end at a line break. So the next
+  line continues in the same formatting, and → before Enter (out of the highlight) gives a plain
+  line. Not for `splitLine` (its caret stays before the break), line breaks inside a paste or a
+  composition, or a code-block line (Enter there is literal).
+- **Kept by deletion.** When Backspace, Delete, or a word or line deletion at a caret removes a
+  highlight's or an inline code's last visible character (so the token goes, README §3.7), the
+  result's pending style is the first deleted character's style (highlight options and code), unless
+  the typing style at the new caret already is that. A deletion that leaves the token some
+  characters doesn't need one: the caret stays in the token.
+- **Not shown at the caret.** With the bar open, its buttons show the pending style. With the bar
+  closed nothing shows it, so a carried or kept style is seen only once something is typed.
+
+*Part 2: font sizes*
+
+- **Steps.** Small (0.85), Default, Large (1.25), Larger (1.5) and Huge (2), times the size of the
+  text around it, so they scale in headings, the title and both note fonts. Their ids are `small`,
+  `large`, `larger` and `huge`.
+- **Syntax: text.** A highlight option `size-<step>`: `=={size-large}big==`,
+  `=={lime+b+font-inter+size-huge}…==`. At most one; any other `size-…` word makes the options
+  invalid, and so the marker literal, as for any invalid option. Margin writes the options in the
+  order color, `b`, `u`, font, size. No color starts with `size-`. The original note-mvp app shows
+  these markers as text, as it does fonts.
+- **Syntax: code blocks.** A word `size-<step>` in the opening fence's info string, the first valid
+  one counting, as for fonts: ```` ```python font-fira-code size-large ````. Setting it removes every
+  size word (and the whitespace before it) and adds ` size-<step>` after the rest of the info, as for
+  fonts; `withFenceFont` becomes one helper for either word. Wrapping writes plain fences, and
+  unwrapping removes the words with the fences.
+- **Model.** `Opts`, `Style` and `Block` gain `size: Size | null`, handled everywhere the font is
+  (§15 Fonts, Model): `parseOptions`, `serializeOptions`, `sameOpts`, `makeChar`, `styled`,
+  `sameStyle`, `UNSTYLED`, `setStyle`, `openingMarker`, `sameVisible`, `fixEquals`, the typing
+  style, `PLAIN` and `settleRow`. B, U, a color, Remove color, Link, a font and a heading recolor keep
+  a size; Clear formatting removes it.
+- **The operation.** `{ type: "size", size: Size | null }`, in the same branch as the font
+  operation, with the same target (the selection and the blocks it touches; with the bar pinned and
+  nothing selected, the word the caret is strictly inside or the caret's block, else the pending
+  target), effect, verification and selection rules, except that everything in the target takes any
+  size: text, inline code and blocks. `formatState` gains `size` (shared by all of the target's
+  characters and touched blocks, else null) and `sizeMixed`.
+- **Render** (render mode only; raw mode shows the markers as text, all at one size). A highlight
+  with a size gets the classes `cm-hl-size` and `fs-<step>`; each inline-code mark inside it, and
+  each line of a sized block, gets `fs-<step>`. Static CSS, per step with factor `<f>`:
+  - `.mode-render .cm-hl.fs-<step> { font-size: <f>em }`;
+  - inline code: in the monospace note font `.cm-code` is `0.92em` of the highlight around it, so it
+    scales with it; in the proportional one it's a fixed 13.5px, so
+    `.font-prop.mode-render .cm-code.fs-<step>` is `calc(13.5px * <f>)`. A highlight's mark always
+    wraps its code marks (its range includes the backticks), so the factor applies once;
+  - blocks: `.mode-render .cm-cb.fs-<step> { font-size: calc(13.5px * <f>) }`;
+  - `.cm-hl-size:not(.cm-hl-color)` has no side padding, as for a font.
+
+  Line heights are unitless, so a line with larger text grows, and CodeMirror measures each line.
+  The caret takes the height of the text beside it (`drawSelection` measures it); on a blank line
+  with a pending size it has the line's own height until something is typed.
+- **The Size button and list.** The second row becomes `[ 🔗 Link ][ Aa Font ][ Size ][ Remove
+  color ]`, and must fit a docked popup on a 320px-wide screen. The Size button is always shown
+  (sizes don't depend on installed files) and disabled when nothing in the target can take a size.
+  It opens the **size list** in the same place and under the same rules as the font list: one list
+  at a time (opening one closes the other); Esc, the button again, a selection change or the bar
+  closing close it; entries act on click, with the pointer-down check; the same keyboard; opened
+  scrolled to the top; hover only on hover devices; built again when the target's size changes
+  under it. Entries: Default, Small, Large, Larger and Huge, each drawn at its size, the current one
+  checked (Default when there's none, nothing when `sizeMixed`). None is ever disabled: the grammar
+  knows only these sizes. In raw mode picking a size writes the marker.
+- **Changes to README behavior** (owner-approved with this feature): with nothing selected the bar
+  formats the word only when the caret is strictly inside it, and elsewhere sets the formatting for
+  what's typed next (§3.6); the second row (§3.6); Clear formatting also removes sizes (§3.6); Enter
+  at the end of a highlight carries its formatting onto the new line, and deleting a token's last
+  character keeps its formatting for what's typed next (§3.7); highlights can change the size
+  (§4.3). Fonts' "Not included" list loses font sizes.
+- **Not included:** keyboard shortcuts (Ctrl+B and so on), showing a pending style at the caret when
+  the bar is closed, a pending style in raw mode, keeping formatting after deleting a selection,
+  carrying inline code or links over Enter, a note-wide default size, sizes in raw mode, and sizes
+  other than the five.
+- **Tests.**
+  - Unit: the size option and fence words (each step, invalid `size-` words, together with fonts,
+    the order); the round-trip alphabet gains sizes; a size-only run; `fixEquals`; every existing
+    operation keeps a size; the size operation (text, inline code, blocks, mixed, Default, nothing to
+    change, a caret in a block, headings, a bare URL refused, a link split); Clear formatting;
+    `formatState`'s `size` and `sizeMixed`. The pending target: a blank line, after a space, a word's
+    start and end, strictly inside a word (the word), a heading, a block, a screenshot line, raw
+    mode. Each option on it gives the pending style; toggling back to the typing style clears it; a
+    swatch in a heading recolors the section; Link is refused. Engine: an insertion with a pending
+    style on a blank line, at a highlight's inner edge (the text goes after the highlight, which
+    stays intact), after a highlight with the same style (it joins), code on and off, `=` and a
+    backtick (settled), a plain and a formatted paste. Enter carrying: at an inner edge, at an outer
+    edge (none), on a blank line with a pending style, in a heading, code and links not carried,
+    `splitLine` (none). Deletion keeping: the last character of a highlight, of inline code, a word
+    deletion, a deletion that leaves characters (none).
+  - Browser: B on a blank line, then typing; typing, Enter, typing; → then Enter; Backspacing
+    everything, then typing again; a click elsewhere drops the pending style; closing the bar keeps
+    it; a font, a size and `</>` ahead of typing; the hint; the size list (check marks, keyboard,
+    mouse, touch); the computed `font-size` of a sized word, its inline code and a sized block, in
+    both note fonts and in a heading; a composition (CDP `Input.imeSetComposition`) at a pending
+    style; on the phone project, the docked second row fits and the size list scrolls.
